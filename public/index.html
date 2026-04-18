@@ -26,7 +26,7 @@
 .filters{margin-top:16px;border-radius:24px;border:1px solid var(--line);background:var(--panel-2);padding:16px}.filters-inner{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}.filter-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.filter-group{display:flex;align-items:center;gap:8px}.filter-label{font-size:11px;text-transform:uppercase;letter-spacing:.22em;color:var(--muted-2)}
 .filter-chip{border:1px solid var(--line);background:rgba(255,255,255,.03);color:#cbd5e1;padding:10px 12px;border-radius:12px;font-size:14px;cursor:pointer;font-family:inherit}.filter-chip.active{border-color:rgba(52,211,153,.3);background:rgba(16,185,129,.15);color:#bbf7d0}.filter-chip:hover{border-color:rgba(255,255,255,.15)}
 .league-select{min-width:260px;border:1px solid var(--line);background:var(--panel-3);color:#cbd5e1;padding:14px 16px;border-radius:16px;font-size:14px;font-family:inherit}
-.table-shell{margin-top:16px;overflow-x:auto;border-radius:30px;border:1px solid var(--line);background:var(--panel);box-shadow:0 24px 80px rgba(0,0,0,.32)}
+.table-shell{margin-top:16px;overflow-x:auto;border-radius:30px;border:1px solid var(--line);background:var(--panel);box-shadow:0 24px 80px rgba(0,0,0,.32);position:relative}
 table{width:100%;border-collapse:collapse;min-width:1600px}
 thead th{padding:16px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted-2);text-align:left;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel);z-index:10;white-space:nowrap}thead th:hover{color:var(--muted)}thead th.sorted-asc::after{content:' ▲';color:var(--green)}thead th.sorted-desc::after{content:' ▼';color:var(--green)}
 tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s}tbody tr:hover{background:rgba(255,255,255,.02)}td{padding:14px 10px;vertical-align:middle}
@@ -44,11 +44,16 @@ tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s
 .actions{display:flex;gap:6px}.action{border:1px solid var(--line);background:rgba(255,255,255,.04);color:#ddd6fe;border-radius:10px;padding:7px 10px;font-size:12px;text-decoration:none}.action:hover{border-color:rgba(255,255,255,.15);color:#f8fafc}
 .empty-state{text-align:center;padding:4rem 2rem;color:var(--muted)}.empty-state h2{font-size:16px;color:var(--text);margin-bottom:8px}
 .footer{margin-top:16px;border-top:1px solid var(--line);padding:16px 0;display:flex;justify-content:space-between;font-size:12px;color:var(--muted-2);flex-wrap:wrap;gap:8px}.footer a{color:var(--violet);text-decoration:none}
-.tip{position:relative;display:inline-flex}.tip .tip-text{visibility:hidden;background:#1e293b;color:#e2e8f0;font-size:12px;font-weight:400;letter-spacing:0;text-transform:none;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.12);position:absolute;z-index:100;top:100%;left:50%;transform:translateX(-50%);margin-top:6px;width:260px;line-height:1.5;white-space:normal;box-shadow:0 8px 24px rgba(0,0,0,.4);pointer-events:none}.tip:hover .tip-text{visibility:visible}
+.tip{position:relative;display:inline-flex}.tip .tip-text{visibility:hidden;background:#1e293b;color:#e2e8f0;font-size:12px;font-weight:400;letter-spacing:0;text-transform:none;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.12);position:absolute;z-index:9999;top:100%;left:50%;transform:translateX(-50%);margin-top:6px;width:260px;line-height:1.5;white-space:normal;box-shadow:0 8px 24px rgba(0,0,0,.4);pointer-events:none}.tip:hover .tip-text{visibility:visible}
 .tab-btn{border:1px solid var(--line);background:rgba(255,255,255,.04);color:#94a3b8;padding:10px 16px;border-radius:14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}.tab-btn.active{border-color:rgba(52,211,153,.3);background:rgba(16,185,129,.15);color:#bbf7d0}.tab-btn:hover:not(.active){border-color:rgba(255,255,255,.15);color:#e2e8f0}
 .perf-market-panel{border:1px solid var(--line);border-radius:22px;background:var(--panel);padding:20px}
 .perf-card{border:1px solid var(--line);border-radius:16px;padding:16px 18px;background:var(--panel-2)}.perf-card-label{font-size:11px;text-transform:uppercase;letter-spacing:.2em;color:var(--muted-2)}.perf-card-value{font-size:28px;font-weight:700;letter-spacing:-.03em;margin-top:8px}.perf-card-sub{font-size:11px;color:var(--muted-2);margin-top:3px}
 .perf-row{display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:13px}.perf-row:first-of-type{border-top:0}.perf-row-label{color:var(--muted)}.perf-row-val{font-weight:700}
+/* Market tabs for performance table */
+.market-tabs{display:flex;gap:8px;padding:16px 20px 0;border-bottom:1px solid var(--line);margin-bottom:0}
+.market-tab{border:none;background:none;color:var(--muted-2);font-size:13px;font-weight:600;padding:8px 16px 12px;cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s}
+.market-tab.active{color:var(--green);border-bottom-color:var(--green)}
+.market-tab:hover:not(.active){color:var(--text)}
 @media(max-width:768px){.stats{grid-template-columns:1fr};#perfContent>div:nth-child(2){grid-template-columns:1fr}}
 </style>
 </head>
@@ -75,7 +80,7 @@ tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s
 <th data-sort="match">Match</th>
 <th>O2.5</th>
 <th>BTTS</th>
-<th><span class="tip">Best Odds<span class="tip-text">Best available Over 2.5 decimal odds from AU/UK bookmakers.</span></span></th>
+<th><span class="tip">Best Odds<span class="tip-text">Best available Over 2.5 decimal odds from AU bookmakers.</span></span></th>
 <th data-sort="edge"><span class="tip">Edge<span class="tip-text">How much the bookie price exceeds the models fair price. Green = potential value. Red = overpriced.</span></span></th>
 <th><span class="tip">Why<span class="tip-text">Key reasons this match was flagged.</span></span></th>
 <th>Links</th>
@@ -92,13 +97,17 @@ tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s
       <div id="perfO25Panel" class="perf-market-panel"></div>
       <div id="perfBttsPanel" class="perf-market-panel"></div>
     </div>
-    <!-- Recent settled table -->
+    <!-- Recent settled table with O2.5 / BTTS tabs -->
     <div class="table-shell" style="margin-top:0">
-      <div style="padding:16px 20px;font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted-2);border-bottom:1px solid var(--line)">Recent Settled Predictions</div>
+      <!-- Market tab bar -->
+      <div class="market-tabs">
+        <button class="market-tab active" id="perfTabO25" onclick="switchPerfMarketTab('over_2.5')">Over 2.5 Goals</button>
+        <button class="market-tab" id="perfTabBtts" onclick="switchPerfMarketTab('btts')">Both Teams To Score</button>
+      </div>
+      <div style="padding:12px 20px;font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted-2);border-bottom:1px solid var(--line)" id="perfTableLabel">Recent Settled — Over 2.5</div>
       <div style="overflow-x:auto"><table id="perfTable" style="min-width:900px"><thead><tr>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:left;border-bottom:1px solid var(--line)">Date</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:left;border-bottom:1px solid var(--line)">Match</th>
-        <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:left;border-bottom:1px solid var(--line)">Market</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Model %</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Fair</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Mkt Odds</th>
@@ -115,11 +124,12 @@ tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s
   </div>
 </div>
 
-<!-- ── Tab nav (injected between filters and table) ─────── -->
 <div class="footer"><span>Data: <a href="https://www.soccerstats.com" target="_blank">SoccerSTATS</a> · Odds: <a href="https://the-odds-api.com" target="_blank">The-Odds-API</a> · Not betting advice.</span><span>GoalScout v2 · Melbourne AEST</span></div>
 </div>
 <script>
 let shortlistData=[],currentSort={key:'prob',dir:'desc'},filters={grade:'all',focus:'all',league:'all'};
+let perfData=null, activePerfMarket='over_2.5';
+
 function pctClass(v){if(v==null)return'pct-cold';if(v>=65)return'pct-hot';if(v>=50)return'pct-warm';return'pct-cold'}
 function gradeClass(g){return g==='A+'?'grade-aplus':g==='A'?'grade-a':g==='B'?'grade-b':'grade-c'}
 function flagClass(f){return f.startsWith('\u{1F525}')?'hot':f.startsWith('\u26A0')?'warn':''}
@@ -149,7 +159,6 @@ document.querySelectorAll('.filter-chip').forEach(function(chip){chip.addEventLi
 async function init(){var s=await loadStatus();await loadShortlist();if(s==='running')pollUntilDone();setInterval(loadStatus,30000)}
 
 // ── Tab switching ────────────────────────────────────────────
-const shortlistEls = ['statsSection','filtersSection','tableShellSection','emptyState'];
 function switchTab(tab) {
   document.getElementById('tabShortlist').classList.toggle('active', tab === 'shortlist');
   document.getElementById('tabPerf').classList.toggle('active', tab === 'perf');
@@ -170,7 +179,6 @@ async function triggerSettle(btn) {
     const r = await fetch('/api/settle', { method: 'POST' });
     const d = await r.json();
     btn.textContent = `✓ ${d.settled || 0} settled`;
-    // Reload perf if panel is open
     if (document.getElementById('tabPerf').classList.contains('active')) loadPerformance();
   } catch(e) {
     btn.textContent = '✗ Error';
@@ -178,16 +186,24 @@ async function triggerSettle(btn) {
   setTimeout(() => { btn.textContent = '↻ Settle now'; btn.disabled = false; }, 3000);
 }
 
+// ── Performance market tab switching ────────────────────────
+function switchPerfMarketTab(market) {
+  activePerfMarket = market;
+  document.getElementById('perfTabO25').classList.toggle('active', market === 'over_2.5');
+  document.getElementById('perfTabBtts').classList.toggle('active', market === 'btts');
+  document.getElementById('perfTableLabel').textContent =
+    market === 'over_2.5' ? 'Recent Settled — Over 2.5' : 'Recent Settled — BTTS';
+  if (perfData) renderPerfTable(perfData.recentSettled || []);
+}
+
 // ── Performance panel ────────────────────────────────────────
-let perfLoaded = false;
 async function loadPerformance() {
   document.getElementById('perfLoading').style.display = 'block';
   document.getElementById('perfContent').style.display = 'none';
   try {
     const r = await fetch('/api/stats');
-    const d = await r.json();
-    renderPerformance(d);
-    perfLoaded = true;
+    perfData = await r.json();
+    renderPerformance(perfData);
   } catch(e) {
     document.getElementById('perfLoading').textContent = 'Failed to load performance data.';
   }
@@ -256,34 +272,41 @@ function renderPerformance(d) {
   document.getElementById('perfO25Panel').outerHTML = marketPanel('Over 2.5 Goals', o25, 'var(--green)').replace('class="perf-market-panel"', 'id="perfO25Panel" class="perf-market-panel"');
   document.getElementById('perfBttsPanel').outerHTML = marketPanel('Both Teams To Score', btts, 'var(--amber)').replace('class="perf-market-panel"', 'id="perfBttsPanel" class="perf-market-panel"');
 
-  // Recent settled table
-  const recent = d.recentSettled || [];
-  if (recent.length === 0) {
-    document.getElementById('perfTableBody').innerHTML = '<tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted);font-size:13px">No settled predictions yet. Run "Settle now" after matches finish.</td></tr>';
-  } else {
-    document.getElementById('perfTableBody').innerHTML = recent.map(p => {
-      const mktLabel = p.market === 'over_2.5' ? 'O2.5' : 'BTTS';
-      const edgeStr = p.edge != null ? `<span style="color:${edgeColor(p.edge)}">${p.edge > 0 ? '+' : ''}${p.edge.toFixed(1)}%</span>` : '—';
-      const clvStr = p.clvPct != null ? `<span style="color:${clvColor(p.clvPct)}">${p.clvPct > 0 ? '+' : ''}${p.clvPct.toFixed(1)}%</span>` : '—';
-      return `<tr style="border-bottom:1px solid rgba(255,255,255,.06)">
-        <td style="padding:11px 10px;font-size:12px;color:var(--muted)">${p.predictionDate}</td>
-        <td style="padding:11px 10px;font-size:13px;font-weight:600">${p.homeTeam} vs ${p.awayTeam}</td>
-        <td style="padding:11px 10px"><span style="font-size:11px;border:1px solid var(--line);border-radius:8px;padding:3px 8px;color:var(--muted)">${mktLabel}</span></td>
-        <td style="padding:11px 10px;text-align:right;font-weight:700">${fmtPctProb(p.modelProbability)}</td>
-        <td style="padding:11px 10px;text-align:right;color:var(--muted)">${fmt(p.fairOdds)}</td>
-        <td style="padding:11px 10px;text-align:right;color:var(--violet)">${fmt(p.marketOdds)}</td>
-        <td style="padding:11px 10px;text-align:right">${edgeStr}</td>
-        <td style="padding:11px 10px;text-align:right;color:var(--muted)">${fmt(p.closingOdds)}</td>
-        <td style="padding:11px 10px;text-align:right">${clvStr}</td>
-        <td style="padding:11px 10px;text-align:center;font-weight:700;color:var(--cyan)">${p.score || '—'}</td>
-        <td style="padding:11px 10px;text-align:center">${resultBadge(p.status)}</td>
-      </tr>`;
-    }).join('');
-  }
+  // Render table for current active market tab
+  renderPerfTable(d.recentSettled || []);
 
   document.getElementById('perfLoading').style.display = 'none';
   document.getElementById('perfContent').style.display = 'block';
 }
+
+// ── Render performance settled table filtered by active market ─
+function renderPerfTable(allSettled) {
+  const rows = allSettled.filter(p => p.market === activePerfMarket);
+
+  if (rows.length === 0) {
+    document.getElementById('perfTableBody').innerHTML =
+      `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted);font-size:13px">No settled ${activePerfMarket === 'over_2.5' ? 'Over 2.5' : 'BTTS'} predictions yet.</td></tr>`;
+    return;
+  }
+
+  document.getElementById('perfTableBody').innerHTML = rows.map(p => {
+    const edgeStr = p.edge != null ? `<span style="color:${edgeColor(p.edge)}">${p.edge > 0 ? '+' : ''}${p.edge.toFixed(1)}%</span>` : '—';
+    const clvStr = p.clvPct != null ? `<span style="color:${clvColor(p.clvPct)}">${p.clvPct > 0 ? '+' : ''}${p.clvPct.toFixed(1)}%</span>` : '—';
+    return `<tr style="border-bottom:1px solid rgba(255,255,255,.06)">
+      <td style="padding:11px 10px;font-size:12px;color:var(--muted)">${p.predictionDate}</td>
+      <td style="padding:11px 10px;font-size:13px;font-weight:600">${p.homeTeam} vs ${p.awayTeam}</td>
+      <td style="padding:11px 10px;text-align:right;font-weight:700">${fmtPctProb(p.modelProbability)}</td>
+      <td style="padding:11px 10px;text-align:right;color:var(--muted)">${fmt(p.fairOdds)}</td>
+      <td style="padding:11px 10px;text-align:right;color:var(--violet)">${fmt(p.marketOdds)}</td>
+      <td style="padding:11px 10px;text-align:right">${edgeStr}</td>
+      <td style="padding:11px 10px;text-align:right;color:var(--muted)">${fmt(p.closingOdds)}</td>
+      <td style="padding:11px 10px;text-align:right">${clvStr}</td>
+      <td style="padding:11px 10px;text-align:center;font-weight:700;color:var(--cyan)">${p.score || '—'}</td>
+      <td style="padding:11px 10px;text-align:center">${resultBadge(p.status)}</td>
+    </tr>`;
+  }).join('');
+}
+
 init();
 </script>
 </body>

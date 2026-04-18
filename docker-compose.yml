@@ -14,11 +14,11 @@ services:
       - DISPLAY_TIMEZONE=Australia/Melbourne
       - ODDS_API_KEYS=30d4b173a6bab1a9a6b9d0f8999ae00b,70b3804507b7a046ef41606d77b3bde3,63e840aa1320d8d28209bcaf848bad0d
       # au = AU-licensed books, uk adds Bet365 (not available in AU feed)
-      - ODDS_REGIONS=au,uk
+      - ODDS_REGIONS=au
       # Exact bookmaker keys from The-Odds-API AU+UK region
       # AU books: sportsbet, tab, tabtouch, unibet, neds, ladbrokes_au, pointsbetau, betright, betr_au, playup
       # UK books included for Bet365 only — prices are effectively identical for European markets
-      - ODDS_BOOKMAKERS=sportsbet,tab,tabtouch,unibet,neds,ladbrokes_au,pointsbetau,betright,betr_au,playup,bet365
+      - ODDS_BOOKMAKERS=sportsbet,tab,tabtouch,unibet,neds,ladbrokes_au,pointsbetau,betright,betr_au,playup
       - SOCCERSTATS_COOKIE=ASPSESSIONIDAGASBTAA=AFCKGEGAJCONMCJLJDOHLECB; steady-token=anZiWFBGaDBrbzNKRkQ4US83VkdVQT09; mmode=1; dmmode=1; tz=600
     extra_hosts:
       - "binhex-flaresolverr:host-gateway"

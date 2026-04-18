@@ -36,17 +36,31 @@ module.exports = {
   DISPLAY_TIMEZONE: process.env.DISPLAY_TIMEZONE || 'Australia/Melbourne',
 
   // ── The Odds API ──────────────────────────────────────────
-  // Multiple keys supported (comma-separated) for rotation
+  // Multiple keys supported (comma-separated) for rotation.
+  // Keys are rotated round-robin across requests.
   ODDS_API_KEYS: (process.env.ODDS_API_KEYS || '').split(',').filter(Boolean),
-  // Regions to fetch odds for (au = Australian bookmakers)
-  // Comma-separated: 'au' or 'au,uk'. Parsed once here, used everywhere.
-  ODDS_REGIONS: process.env.ODDS_REGIONS || 'au',
+
+  // Regions to request from the API (comma-separated).
+  // 'au' = AU-licensed bookmakers. Adding 'uk' doubles quota usage —
+  // only do this if you specifically need UK books (e.g. Bet365).
+  ODDS_REGIONS: (process.env.ODDS_REGIONS || 'au')
+    .split(',').map(r => r.trim().toLowerCase()).filter(Boolean).join(','),
+
   // Optional allowlist of bookmaker keys to consider when picking best price.
   // If empty, all bookmakers returned by the API are eligible.
-  // Example: 'sportsbet,tab,neds,pointsbet,betright,betr,unibet'
-  // Leave unset to allow all bookmakers for a region.
+  // Exact key names confirmed from live API responses (April 2026):
+  //   sportsbet, tab, tabtouch, unibet, neds, ladbrokes_au,
+  //   pointsbetau, betright, betr_au, playup, betfair_ex_au
+  // Note: bet365 only available via 'uk' region, not 'au'.
   ODDS_BOOKMAKERS: (process.env.ODDS_BOOKMAKERS || '')
     .split(',').map(b => b.trim().toLowerCase()).filter(Boolean),
+
+  // Daily API call limit across all keys combined.
+  // Prevents quota exhaustion from runaway refreshes or debugging sessions.
+  // 4 keys × 500/month ≈ 65/day. Default 50 is conservative.
+  // Set to 0 to disable the guard (not recommended).
+  ODDS_DAILY_LIMIT: parseInt(process.env.ODDS_DAILY_LIMIT || '50', 10),
+
   // Markets to fetch
   ODDS_MARKETS: 'totals,btts',
 
@@ -78,16 +92,14 @@ module.exports = {
     CS_HIGH:    35,   // was 40 — catch more defensive teams
 
     // Minimum games played to trust the stats
-    MIN_GP:     5,    // NEW — skip teams with <5 games
+    MIN_GP:     5,    // skip teams with <5 games
 
     // Minimum composite score for shortlist
     MIN_SCORE:  5,    // was 3 — much tighter
 
     // Require BOTH sides to contribute
-    // A match needs at least 2 points from EACH category
-    // or 4+ from one category to qualify
-    MIN_SINGLE_CAT: 4,  // NEW — if only one cat strong, need 4+
-    MIN_DUAL_CAT:   2,  // NEW — if both cats, need 2+ each
+    MIN_SINGLE_CAT: 4,  // if only one cat strong, need 4+
+    MIN_DUAL_CAT:   2,  // if both cats, need 2+ each
   },
 
   // ── Server ────────────────────────────────────────────────
