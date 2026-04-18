@@ -2,23 +2,35 @@
 // ─────────────────────────────────────────────────────────────
 // Orchestrator v3 — BETTABLE-FIRST flow
 //
-// NEW WORKFLOW:
+// WORKFLOW:
 //   1. Query The-Odds-API for active soccer competitions
 //   2. Map those to SoccerSTATS league slugs
-//   3. Only scrape SoccerSTATS matches page for those leagues
-//   4. Score and shortlist only bettable matches
-//   5. Fetch match details for top shortlisted
-//   6. Write results
+//   3. Scrape SoccerSTATS matches page for bettable leagues only
+//   4. Score and shortlist bettable matches
+//   5. Fetch real odds for shortlisted matches
+//   6. Run probability engine + log predictions (with odds snapshot)
+//   7. Scrape match details for top shortlisted
+//   8. Write results to disk
 //
-// This eliminates the 600+ noise matches from leagues
-// that have no betting markets available.
+// Odds snapshot integrity:
+//   Odds are fetched and matched BEFORE logPrediction is called.
+//   If matching fails, the prediction is logged without odds and
+//   history.js will allow one update on the next refresh cycle
+//   when odds become available.
 // ─────────────────────────────────────────────────────────────
 
 const { scrapeMatchesPage, scrapeLeaguePage, scrapeMatchDetail } = require('./match-discovery');
 const { buildShortlist } = require('../engine/shortlist');
 const { analyseMatch } = require('../engine/probability');
 const { logPrediction } = require('../engine/history');
-const { buildBettableLeagueMap, isBettableLeague, getOddsKey, fetchOddsForShortlist, matchOddsToMatch, SLUG_TO_ODDS_MAP } = require('../odds/the-odds-api');
+const {
+  buildBettableLeagueMap,
+  isBettableLeague,
+  getOddsKey,
+  fetchOddsForShortlist,
+  matchOddsToMatch,
+  SLUG_TO_ODDS_MAP,
+} = require('../odds/the-odds-api');
 const { writeJSON, writeMatchDetail } = require('../utils/storage');
 const config = require('../config');
 
@@ -56,7 +68,6 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
         bettableMap = await buildBettableLeagueMap();
         console.log(`[orchestrator] ${bettableMap.size} bettable competitions on Odds API`);
 
-        // Find which SoccerSTATS slugs map to active odds competitions
         for (const [slug, oddsKey] of Object.entries(SLUG_TO_ODDS_MAP)) {
           if (bettableMap.has(oddsKey)) {
             bettableSlugs.push(slug);
@@ -69,7 +80,6 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     }
 
     // ── Step 2: Scrape SoccerSTATS matches page ───────────
-    // This gets ALL matches on the page (with membership, ~200+)
     refreshState.progress = 'Scraping matches page...';
     const { matches: todayMatches, leagueSlugs: todaySlugs } = await scrapeMatchesPage(1);
 
@@ -83,7 +93,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       console.warn('[orchestrator] tomorrow failed:', e.message);
     }
 
-    // Merge all scraped matches
+    // Merge and deduplicate all scraped matches
     const allScraped = [...todayMatches, ...tomorrowMatches];
     const deduped = new Map();
     for (const m of allScraped) {
@@ -94,7 +104,6 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     console.log(`[orchestrator] total scraped matches: ${allMatches.length}`);
 
     // ── Step 3: Filter to bettable only ───────────────────
-    // If we have bettable data, tag all matches and filter
     if (bettableSlugs.length > 0) {
       for (const m of allMatches) {
         m.bettable = bettableSlugs.includes(m.leagueSlug);
@@ -105,22 +114,18 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       const nonBettable = allMatches.length - bettableMatches.length;
       console.log(`[orchestrator] ${bettableMatches.length} bettable, ${nonBettable} skipped (no betting markets)`);
 
-      // Keep only bettable for scoring, but store all for reference
       refreshState.bettableCount = bettableMatches.length;
     } else {
-      // No odds API available — mark all as unknown
       for (const m of allMatches) {
-        m.bettable = null; // unknown
+        m.bettable = null;
       }
     }
 
     // ── Step 4: Scrape league pages for bettable leagues ──
-    // Only scrape league-level stats for bettable leagues to
-    // get supplementary context (league avg goals, BTTS%)
     const leagueStatsMap = {};
     const slugsToScrape = bettableSlugs.length > 0
       ? bettableSlugs.filter(s => todaySlugs.includes(s) || allMatches.some(m => m.leagueSlug === s))
-      : todaySlugs.slice(0, 20); // fallback: top 20 from page
+      : todaySlugs.slice(0, 20);
 
     refreshState.progress = `Scraping ${slugsToScrape.length} league pages...`;
 
@@ -138,7 +143,6 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     // ── Step 5: Score and shortlist ───────────────────────
     refreshState.progress = 'Scoring matches...';
 
-    // Score only bettable matches (or all if no odds data)
     const matchesToScore = bettableSlugs.length > 0
       ? allMatches.filter(m => m.bettable)
       : allMatches;
@@ -148,19 +152,8 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     console.log(`[orchestrator] shortlisted: ${shortlisted.length} of ${scored.length} bettable matches`);
 
     // ── Step 5b: Tag matches with day (Today/Tomorrow) ────
-    for (const m of scored) {
-      if (todayMatches.some(t => t.id === m.id)) {
-        m.day = 'Today';
-      } else {
-        m.day = 'Tomorrow';
-      }
-    }
-    for (const m of shortlisted) {
-      if (todayMatches.some(t => t.id === m.id)) {
-        m.day = 'Today';
-      } else {
-        m.day = 'Tomorrow';
-      }
+    for (const m of [...scored, ...shortlisted]) {
+      m.day = todayMatches.some(t => t.id === m.id) ? 'Today' : 'Tomorrow';
     }
 
     // ── Step 6: Fetch real odds for shortlisted matches ───
@@ -169,29 +162,38 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       try {
         const oddsMap = await fetchOddsForShortlist(shortlisted);
         let matched = 0;
+        let unmatched = 0;
+
         for (const m of shortlisted) {
           const odds = matchOddsToMatch(m, oddsMap);
           if (odds) {
             m.odds = odds;
             matched++;
+          } else {
+            unmatched++;
+            // Log so we can diagnose which team names are failing fuzzy match
+            console.log(`[orchestrator] no odds match: "${m.homeTeam}" vs "${m.awayTeam}" (${m.leagueSlug})`);
           }
         }
-        console.log(`[orchestrator] matched odds for ${matched} of ${shortlisted.length} shortlisted`);
+
+        console.log(`[orchestrator] odds matched: ${matched} of ${shortlisted.length} (${unmatched} unmatched)`);
       } catch (e) {
         console.warn('[orchestrator] odds fetch failed:', e.message);
       }
     }
 
     // ── Step 6b: Run probability engine + log predictions ─
+    // Odds must be attached to matches BEFORE this step runs,
+    // so the snapshot captured in logPrediction is complete.
     refreshState.progress = 'Calculating probabilities...';
-    const leagueStatsForProb = leagueStatsMap; // reuse what we already scraped
 
     for (const m of shortlisted) {
       try {
-        const analysis = analyseMatch(m, leagueStatsForProb[m.leagueSlug] || {});
+        const analysis = analyseMatch(m, leagueStatsMap[m.leagueSlug] || {});
         m.analysis = analysis;
 
-        // Log prediction to history (append-only, not overwritten)
+        // Log prediction to history — odds snapshot included if matching succeeded.
+        // If odds are null here, history.js will allow one update on the next cycle.
         logPrediction(m, analysis);
       } catch (e) {
         console.warn(`[orchestrator] probability analysis failed for ${m.id}:`, e.message);
@@ -199,8 +201,9 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     }
 
     const withProbs = shortlisted.filter(m => m.analysis).length;
+    const withOdds = shortlisted.filter(m => m.analysis?.o25?.marketOdds != null).length;
     const withEdge = shortlisted.filter(m => m.analysis?.o25?.edge != null).length;
-    console.log(`[orchestrator] probabilities calculated for ${withProbs}, edge detected for ${withEdge}`);
+    console.log(`[orchestrator] probabilities: ${withProbs} calculated, ${withOdds} with odds, ${withEdge} with edge`);
 
     // ── Step 7: Scrape match details for top shortlisted ──
     if (scrapeDetails && shortlisted.length > 0) {
@@ -222,7 +225,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       }
     }
 
-    // ── Step 7: Write to disk ─────────────────────────────
+    // ── Step 8: Write to disk ─────────────────────────────
     refreshState.progress = 'Writing data...';
 
     writeJSON(config.DISCOVERED_FILE, scored);

@@ -7,9 +7,15 @@
 //   results.jsonl      — one line per settled fixture
 //   closing-odds.jsonl — one line per closing odds capture
 //
-// Core principle: prediction records are immutable once written.
-// Settlement and evaluation are derived by joining the files at
-// read time — no mutation of source records ever.
+// Core principle: prediction records are immutable once written
+// WITH complete data. The one exception: if a prediction was
+// written without market odds (odds matching failed on first
+// refresh), a second write is permitted when odds become
+// available. The dedup logic at read time keeps the LAST
+// complete record (i.e. the one with odds populated).
+//
+// Dedup key at READ time: fixtureId + market → keep last record
+// where marketOdds is not null; fall back to first if none have odds.
 // ─────────────────────────────────────────────────────────────
 
 const fs = require('fs');
@@ -49,18 +55,33 @@ function readJSONL(filePath) {
 
 /**
  * Log a prediction for a match.
- * Deduplicates by fixtureId alone — once a fixture is logged, it is never
- * logged again even if it appears on subsequent refresh cycles (e.g. a
- * "tomorrow" match that rolls into "today"). This ensures each real-world
- * match counts exactly once in performance metrics.
+ *
+ * Deduplication logic:
+ *   - If this fixtureId+market has NEVER been logged → write it.
+ *   - If it was logged WITHOUT marketOdds (odds matching failed) AND
+ *     we now have odds → write again (the read-time dedup will prefer
+ *     the record with odds populated).
+ *   - If it was already logged WITH marketOdds → skip (immutable).
+ *
+ * This ensures every real-world match counts exactly once in
+ * performance metrics, while allowing one odds-update pass when
+ * the first write was incomplete due to a matching failure.
  */
 function logPrediction(match, analysis) {
   const today = new Date().toISOString().slice(0, 10);
   const fixtureId = match.id;
 
   const existing = readJSONL(config.PREDICTIONS_FILE);
-  const alreadyLogged = existing.some(p => p.fixtureId === fixtureId);
-  if (alreadyLogged) return;
+
+  // Check completion status of each market for this fixture
+  const o25Existing = existing.find(p => p.fixtureId === fixtureId && p.market === 'over_2.5');
+  const bttsExisting = existing.find(p => p.fixtureId === fixtureId && p.market === 'btts');
+
+  const o25Complete = o25Existing?.marketOdds != null;
+  const bttsComplete = bttsExisting != null; // BTTS never has odds, so presence = complete
+
+  // If both markets are fully logged, nothing to do
+  if (o25Complete && bttsComplete) return;
 
   const base = {
     fixtureId,
@@ -76,15 +97,22 @@ function logPrediction(match, analysis) {
     commenceTime: match.odds?.commenceTime || null,
   };
 
-  if (analysis.o25.probability != null) {
+  // ── O2.5 prediction ────────────────────────────────────────
+  // Write if: not yet logged, OR logged but without odds and we now have them
+  const shouldWriteO25 = !o25Complete && analysis.o25.probability != null;
+  if (shouldWriteO25) {
+    const hasOdds = analysis.o25.marketOdds != null;
     appendJSONL(config.PREDICTIONS_FILE, {
       ...base,
       market: 'over_2.5',
       selection: 'over',
       modelProbability: analysis.o25.probability,
       fairOdds: analysis.o25.fairOdds,
+      // Odds snapshot at tip time — stored once, never recalculated
       marketOdds: analysis.o25.marketOdds,
       bookmaker: analysis.o25.bookmaker,
+      bookmakerKey: analysis.o25.bookmakerKey || null,
+      oddsSnapshotAt: hasOdds ? new Date().toISOString() : null,
       edge: analysis.o25.edge,
       inputs: {
         homeO25pct: match.home?.o25pct,
@@ -97,16 +125,20 @@ function logPrediction(match, analysis) {
     });
   }
 
-  if (analysis.btts.probability != null) {
+  // ── BTTS prediction ────────────────────────────────────────
+  // BTTS is only written once — odds are not available for this market
+  if (!bttsExisting && analysis.btts.probability != null) {
     appendJSONL(config.PREDICTIONS_FILE, {
       ...base,
       market: 'btts',
       selection: 'yes',
       modelProbability: analysis.btts.probability,
       fairOdds: analysis.btts.fairOdds,
-      marketOdds: analysis.btts.marketOdds,
-      bookmaker: analysis.btts.bookmaker,
-      edge: analysis.btts.edge,
+      marketOdds: null,   // BTTS not available from AU region Odds API
+      bookmaker: null,
+      bookmakerKey: null,
+      oddsSnapshotAt: null,
+      edge: null,
       inputs: {
         homeBTSpct: match.home?.btsPct,
         awayBTSpct: match.away?.btsPct,
@@ -131,7 +163,7 @@ function logPrediction(match, analysis) {
  *   'postponed'  — fixture postponed, treated as void
  *   'cancelled'  — fixture cancelled before KO, treated as void
  *   'abandoned'  — abandoned mid-match, treated as void
- *   'unknown'    — >36h with no result found, treated as void
+ *   'unknown'    — >72h with no result found, treated as void
  */
 function logResult(fixtureId, result) {
   const status = result.matchStatus || 'completed';
@@ -158,6 +190,12 @@ function logResult(fixtureId, result) {
  * Compute comprehensive prediction performance statistics.
  * Joins predictions, results, and closing odds at read time.
  * Immutable source files are never touched.
+ *
+ * Dedup strategy for predictions:
+ *   Per fixtureId+market, keep the record with marketOdds populated
+ *   if one exists; otherwise keep the most recent record.
+ *   This handles the case where a fixture was logged twice (once
+ *   without odds, once with odds after a second refresh cycle).
  */
 function getPredictionStats() {
   const predictions = readJSONL(config.PREDICTIONS_FILE);
@@ -177,19 +215,31 @@ function getPredictionStats() {
     closingMap.set(`${c.fixtureId}__${c.market}`, c.decimalOdds);
   }
 
-  // Deduplicate predictions by fixtureId + market — keep the earliest entry.
-  // Duplicates arise when a fixture appears across multiple refresh cycles
-  // (e.g. logged as "tomorrow" then again as "today"). Each real match
-  // should count exactly once in performance metrics.
-  const dedupedPredictions = [];
-  const seenFixtureMarket = new Set();
+  // Deduplicate predictions by fixtureId + market.
+  // Prefer: records WITH marketOdds over those without.
+  // Among equals: keep the most recent (last written).
+  const dedupMap = new Map(); // key → best record
   for (const p of predictions) {
     const key = `${p.fixtureId}__${p.market}`;
-    if (!seenFixtureMarket.has(key)) {
-      seenFixtureMarket.add(key);
-      dedupedPredictions.push(p);
+    const existing = dedupMap.get(key);
+    if (!existing) {
+      dedupMap.set(key, p);
+    } else {
+      // Prefer the record with odds populated
+      const existingHasOdds = existing.marketOdds != null;
+      const pHasOdds = p.marketOdds != null;
+      if (pHasOdds && !existingHasOdds) {
+        // New record has odds, existing doesn't — upgrade
+        dedupMap.set(key, p);
+      } else if (pHasOdds === existingHasOdds) {
+        // Same odds status — keep the more recent one
+        dedupMap.set(key, p);
+      }
+      // If existing has odds and new doesn't — keep existing (no change)
     }
   }
+
+  const dedupedPredictions = Array.from(dedupMap.values());
 
   // Classify each prediction
   const classified = dedupedPredictions.map(p => {
@@ -319,6 +369,8 @@ function getPredictionStats() {
       modelProbability: p.modelProbability,
       fairOdds: p.fairOdds,
       marketOdds: p.marketOdds,
+      bookmaker: p.bookmaker,
+      bookmakerKey: p.bookmakerKey,
       edge: p.edge,
       closingOdds: p.closingPrice,
       clvPct: p.clvPct,

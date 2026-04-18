@@ -30,7 +30,7 @@
 //         this drags BTTS probability down
 //
 // Fair odds = 1 / probability
-// Edge = (fair odds - market odds) / market odds
+// Edge = (market_odds / fair_odds - 1) * 100
 //   Positive edge = model thinks bet is underpriced (value)
 //   Negative edge = model thinks bet is overpriced (avoid)
 //
@@ -179,6 +179,9 @@ function calcEdge(marketOdds, fairOddsVal) {
 /**
  * Full probability analysis for a match.
  * Returns all model outputs needed for the pricing engine.
+ *
+ * Includes full odds snapshot at analysis time — bookmakerKey is
+ * propagated so history.js can store a complete auditable record.
  */
 function analyseMatch(match, leagueStats = {}) {
   const o25prob = estimateO25(match, leagueStats);
@@ -189,7 +192,6 @@ function analyseMatch(match, leagueStats = {}) {
 
   // Calculate edge against market odds if available
   let o25edge = null;
-  let bttsEdge = null;
 
   if (match.odds && match.odds.o25 && o25fair) {
     o25edge = calcEdge(match.odds.o25.price, o25fair);
@@ -202,17 +204,21 @@ function analyseMatch(match, leagueStats = {}) {
     o25: {
       probability: o25prob,
       fairOdds: o25fair,
+      // Full odds snapshot — captured at tip time, never recalculated
       marketOdds: match.odds?.o25?.price || null,
       bookmaker: match.odds?.o25?.bookmaker || null,
+      bookmakerKey: match.odds?.o25?.bookmakerKey || null,
       edge: o25edge,
     },
 
     btts: {
       probability: bttsProb,
       fairOdds: bttsFair,
-      marketOdds: null,  // BTTS market odds not yet available from API
+      // BTTS market odds not available from AU region Odds API
+      marketOdds: null,
       bookmaker: null,
-      edge: bttsEdge,
+      bookmakerKey: null,
+      edge: null,
     },
   };
 }

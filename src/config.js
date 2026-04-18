@@ -39,7 +39,14 @@ module.exports = {
   // Multiple keys supported (comma-separated) for rotation
   ODDS_API_KEYS: (process.env.ODDS_API_KEYS || '').split(',').filter(Boolean),
   // Regions to fetch odds for (au = Australian bookmakers)
+  // Comma-separated: 'au' or 'au,uk'. Parsed once here, used everywhere.
   ODDS_REGIONS: process.env.ODDS_REGIONS || 'au',
+  // Optional allowlist of bookmaker keys to consider when picking best price.
+  // If empty, all bookmakers returned by the API are eligible.
+  // Example: 'sportsbet,tab,neds,pointsbet,betright,betr,unibet'
+  // Leave unset to allow all bookmakers for a region.
+  ODDS_BOOKMAKERS: (process.env.ODDS_BOOKMAKERS || '')
+    .split(',').map(b => b.trim().toLowerCase()).filter(Boolean),
   // Markets to fetch
   ODDS_MARKETS: 'totals,btts',
 

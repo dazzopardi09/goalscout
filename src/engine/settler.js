@@ -107,7 +107,7 @@ async function fetchCurrentOddsForSport(sportKey) {
 
   const url = new URL(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds`);
   url.searchParams.set('apiKey', key);
-  url.searchParams.set('regions', config.ODDS_REGIONS || 'au,uk');
+  url.searchParams.set('regions', config.ODDS_REGIONS);
   url.searchParams.set('markets', 'totals');
   url.searchParams.set('oddsFormat', 'decimal');
 

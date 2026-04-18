@@ -284,8 +284,8 @@ async function fetchOddsForShortlist(shortlistedMatches) {
 
   for (const sportKey of oddsKeys) {
     try {
-      // Fetch h2h and totals — use au,uk regions for broader coverage
-      const data = await fetchOddsForSport(sportKey, 'h2h,totals', 'au,uk');
+      // Fetch h2h and totals — region controlled by ODDS_REGIONS env var
+      const data = await fetchOddsForSport(sportKey, 'h2h,totals', config.ODDS_REGIONS);
       if (!data || !Array.isArray(data)) continue;
 
       for (const event of data) {
@@ -305,7 +305,13 @@ async function fetchOddsForShortlist(shortlistedMatches) {
         let bestO25Over = null;
         let bestH2hHome = null;
 
+        const allowedBookmakers = config.ODDS_BOOKMAKERS; // string[], empty = allow all
+
         for (const bm of (event.bookmakers || [])) {
+          // Skip if an allowlist is configured and this bookmaker isn't on it
+          if (allowedBookmakers.length > 0 && !allowedBookmakers.includes(bm.key.toLowerCase())) {
+            continue;
+          }
           for (const mkt of (bm.markets || [])) {
             if (mkt.key === 'totals') {
               // Find the Over 2.5 outcome
