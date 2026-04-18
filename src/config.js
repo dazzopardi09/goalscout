@@ -20,9 +20,10 @@ module.exports = {
   // ── Historical logging (lean data model) ──────────────
   // These files ACCUMULATE — they are NOT overwritten on refresh.
   // This is the minimum history needed to evaluate model performance.
-  HISTORY_DIR:     path.join(DATA_DIR, 'history'),
+  HISTORY_DIR:      path.join(DATA_DIR, 'history'),
   PREDICTIONS_FILE: path.join(DATA_DIR, 'history', 'predictions.jsonl'),
-  RESULTS_FILE:    path.join(DATA_DIR, 'history', 'results.jsonl'),
+  RESULTS_FILE:     path.join(DATA_DIR, 'history', 'results.jsonl'),
+  CLOSING_ODDS_FILE: path.join(DATA_DIR, 'history', 'closing-odds.jsonl'),
 
   // ── SoccerSTATS authentication ─────────────────────────────
   SOCCERSTATS_COOKIE: process.env.SOCCERSTATS_COOKIE || '',

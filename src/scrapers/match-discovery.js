@@ -107,14 +107,54 @@ async function scrapeMatchesPage(matchday = 1) {
 
     if (leagueMatch) {
       currentLeagueSlug = leagueMatch[1].toLowerCase();
-      // The league name is the full text of the first cell, cleaned up
-      // It typically contains "COUNTRY" or "COUNTRY - League Name"
-      const rawName = cellTexts[0]?.replace(/\s+/g, ' ').trim() || '';
-      // Remove the short code suffix (e.g. "ITA", "EN", "GER") if it's at the end after the name
-      // The cell typically has: "ITALY ITA" or "England - Premier League EN"
-      // We want to keep the descriptive part
-      const linkText = cells.first().find('a').last().text().trim(); // short code like "ITA"
-      currentLeague = rawName.replace(new RegExp('\\s*' + linkText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$'), '').trim() || rawName || currentLeagueSlug;
+
+      // Use a lookup table for clean league names since HTML parsing is fragile
+      const LEAGUE_NAMES = {
+        'england': 'England - Premier League',
+        'england2': 'England - Championship',
+        'england3': 'England - League One',
+        'england4': 'England - League Two',
+        'england5': 'England - National League',
+        'germany': 'Germany - Bundesliga',
+        'germany2': 'Germany - 2. Bundesliga',
+        'germany3': 'Germany - 3. Liga',
+        'italy': 'Italy - Serie A',
+        'italy2': 'Italy - Serie B',
+        'spain': 'Spain - La Liga',
+        'spain2': 'Spain - La Liga 2',
+        'france': 'France - Ligue 1',
+        'france2': 'France - Ligue 2',
+        'netherlands': 'Netherlands - Eredivisie',
+        'netherlands2': 'Netherlands - Eerste Divisie',
+        'portugal': 'Portugal - Liga Portugal',
+        'portugal2': 'Portugal - Liga Portugal 2',
+        'belgium': 'Belgium - Pro League',
+        'austria': 'Austria - Bundesliga',
+        'switzerland': 'Switzerland - Super League',
+        'turkey': 'Turkey - Süper Lig',
+        'greece': 'Greece - Super League',
+        'scotland': 'Scotland - Premiership',
+        'scotland2': 'Scotland - Championship',
+        'denmark': 'Denmark - Superliga',
+        'sweden': 'Sweden - Allsvenskan',
+        'norway': 'Norway - Eliteserien',
+        'finland': 'Finland - Veikkausliiga',
+        'poland': 'Poland - Ekstraklasa',
+        'czechrepublic': 'Czech Republic - First League',
+        'russia': 'Russia - Premier League',
+        'ukraine': 'Ukraine - Premier League',
+        'argentina': 'Argentina - Primera División',
+        'brazil': 'Brazil - Série A',
+        'australia': 'Australia - A-League',
+        'japan': 'Japan - J1 League',
+        'southkorea': 'South Korea - K League 1',
+        'usa': 'USA - MLS',
+        'cleague': 'UEFA Champions League',
+        'uefa': 'UEFA Europa League',
+        'uefaconference': 'UEFA Conference League',
+      };
+
+      currentLeague = LEAGUE_NAMES[currentLeagueSlug] || cellTexts[0]?.replace(/\s+/g, ' ').trim() || currentLeagueSlug;
       leagueSlugs.add(currentLeagueSlug);
     }
 

@@ -350,12 +350,25 @@ async function fetchOddsForShortlist(shortlistedMatches) {
 
 /**
  * Normalise a team name for fuzzy matching between SoccerSTATS and Odds API.
- * Strips common suffixes, lowercases, removes accents.
+ * Expands common abbreviations, strips suffixes, lowercases, removes accents.
  */
 function normalise(name) {
   return (name || '')
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    // Expand common abbreviations BEFORE stripping
+    .replace(/\butd\b/g, 'united')
+    .replace(/\bctiy\b/g, 'city')  // common typo
+    .replace(/\bwed\b/g, 'wednesday')
+    .replace(/\balbion\b/g, 'albion')
+    .replace(/\batl\b/g, 'atletico')
+    .replace(/\bath\b/g, 'athletic')
+    .replace(/\bspt?\b/g, 'sport')
+    .replace(/\bsporting\b/g, 'sporting')
+    .replace(/\bborussia\b/g, 'borussia')
+    .replace(/\bint\b/g, 'inter')
+    .replace(/\bws\b/g, 'western sydney')
+    // Strip common suffixes/prefixes
     .replace(/\bfc\b/g, '')
     .replace(/\bsc\b/g, '')
     .replace(/\bsv\b/g, '')
@@ -372,22 +385,35 @@ function normalise(name) {
 
 /**
  * Try to match a shortlisted match to odds data.
- * Uses fuzzy team name matching.
+ * Uses multiple matching strategies.
  */
 function matchOddsToMatch(match, oddsMap) {
   const homeNorm = normalise(match.homeTeam);
   const awayNorm = normalise(match.awayTeam);
 
-  // Try exact key
+  // Strategy 1: Exact normalised key
   const exactKey = `${homeNorm}__${awayNorm}`;
   if (oddsMap.has(exactKey)) return oddsMap.get(exactKey);
 
-  // Try partial match — home team name appears in odds home team
+  // Strategy 2: Partial/substring match
   for (const [key, odds] of oddsMap) {
     const [oh, oa] = key.split('__');
     if ((oh.includes(homeNorm) || homeNorm.includes(oh)) &&
         (oa.includes(awayNorm) || awayNorm.includes(oa))) {
       return odds;
+    }
+  }
+
+  // Strategy 3: First-word match (e.g. "Newcastle" matches "Newcastle United")
+  const homeFirst = homeNorm.substring(0, Math.min(homeNorm.length, 6));
+  const awayFirst = awayNorm.substring(0, Math.min(awayNorm.length, 6));
+
+  if (homeFirst.length >= 4 && awayFirst.length >= 4) {
+    for (const [key, odds] of oddsMap) {
+      const [oh, oa] = key.split('__');
+      if (oh.startsWith(homeFirst) && oa.startsWith(awayFirst)) {
+        return odds;
+      }
     }
   }
 

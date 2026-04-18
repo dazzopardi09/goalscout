@@ -11,6 +11,7 @@ const path = require('path');
 const cron = require('node-cron');
 const apiRoutes = require('./api/routes');
 const { runFullRefresh } = require('./scrapers/orchestrator');
+const { runSettlement } = require('./engine/settler');
 const { ensureDirs } = require('./utils/storage');
 const config = require('./config');
 
@@ -60,6 +61,16 @@ cron.schedule(config.CRON_SCHEDULE, () => {
   console.log(`[cron] scheduled refresh at ${new Date().toISOString()}`);
   runFullRefresh().catch(err => {
     console.error('[cron] scheduled refresh failed:', err.message);
+  });
+});
+
+// ── Settlement cron (every 2 hours) ─────────────────────────
+// Runs independently of the main refresh — fetches scores for
+// past matches and captures closing odds for upcoming ones.
+cron.schedule('0 */2 * * *', () => {
+  console.log(`[cron] settlement cycle at ${new Date().toISOString()}`);
+  runSettlement().catch(err => {
+    console.error('[cron] settlement failed:', err.message);
   });
 });
 

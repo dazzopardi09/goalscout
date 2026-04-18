@@ -20,6 +20,7 @@
 const express = require('express');
 const { readJSON, readMatchDetail } = require('../utils/storage');
 const { runFullRefresh, getRefreshState } = require('../scrapers/orchestrator');
+const { runSettlement } = require('../engine/settler');
 const { getPredictionStats, readJSONL } = require('../engine/history');
 const config = require('../config');
 
@@ -92,6 +93,19 @@ router.post('/refresh', async (req, res) => {
   });
 
   res.json({ message: 'Refresh started', status: 'running' });
+});
+
+// ── Manual settlement trigger ───────────────────────────────
+
+router.post('/settle', async (req, res) => {
+  console.log('[api] manual settlement triggered');
+  try {
+    const result = await runSettlement();
+    res.json({ message: 'Settlement complete', ...result });
+  } catch (err) {
+    console.error('[api] settlement error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
