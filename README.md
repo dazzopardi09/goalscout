@@ -1,380 +1,243 @@
-# GoalScout v1.0
+# GoalScout v2
 
-**Football match investigation tool — Over 2.5 & BTTS shortlisting from SoccerSTATS**
+**Football betting probability engine — Over 2.5 and Under 2.5 goals**
 
-Phase 1: discovery → shortlist → investigate.
+GoalScout identifies pre-match football betting opportunities in the O2.5 and U2.5 goals markets by estimating true match probabilities, comparing them against bookmaker prices, and surfacing edge.
 
 ---
 
-## Architecture overview
+## What It Does
+
+For each shortlisted match, GoalScout:
+
+1. **Makes a directional call** — Over 2.5 *or* Under 2.5. Never both. The direction with the stronger signal wins.
+2. **Estimates probability** — P(O2.5) from weighted team and league stats. P(U2.5) = 1 − P(O2.5).
+3. **Calculates fair odds** — 1 / probability, no margin applied.
+4. **Measures edge** — how much the bookmaker price exceeds fair odds. Positive = potential value.
+5. **Captures three price snapshots** — tip-time, pre-kickoff (30 mins before), and closing — to track price movement and measure CLV.
+6. **Settles results** and tracks model performance independently for O2.5 and U2.5.
+
+---
+
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        GoalScout                            │
-├─────────────┬───────────────┬───────────────┬───────────────┤
-│  Discovery  │  Shortlist    │  Enrichment   │  Presentation │
-│  Layer      │  Engine       │  Layer        │  Layer        │
-├─────────────┼───────────────┼───────────────┼───────────────┤
-│ matches.asp │ scoring algo  │ pmatch.asp    │ Express API   │
-│ leagues.asp │ flag system   │ league detail │ HTML dashboard│
-│ latest.asp  │ grade bands   │ (future: h2h) │ JSON cache    │
-├─────────────┴───────────────┴───────────────┴───────────────┤
-│                    Local JSON Storage                       │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─ FUTURE ──────────────────────────────────────────────┐  │
-│  │  Phase 2: Odds ingestion → value detection            │  │
-│  │  Phase 3: Bookmaker execution → automated placement   │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+SoccerSTATS.com
+  └─ FlareSolverr (Cloudflare bypass)
+       └─ Match scraper
+
+The-Odds-API (UK region)
+  └─ League activity filter + Over/Under odds
+
+Shortlist Engine
+  └─ Directional scoring: O2.5 signals vs U2.5 signals
+  └─ One direction per match, grade A+/A/B
+
+Probability Engine
+  └─ P(O2.5) from team/league stats
+  └─ Fair odds + edge calculation
+
+Three-Snapshot Odds Capture
+  └─ tip_time → pre_kickoff (30min) → closing
+
+Settlement Engine
+  └─ Fetches results, records outcomes
+  └─ Tracks hit rate, Brier score, edge, CLV
+
+Express API + HTML Dashboard
+  └─ Shortlist tab: directional matches with odds and edge
+  └─ Performance tab: O2.5 and U2.5 independently
 ```
 
-### Workflow
-
-1. **Discover** — Scrape `matches.asp?listing=2` for today's matches
-   with per-match stats (O2.5%, BTTS%, PPG, TG, CS, FTS, W%).
-   Also scrape `matches.asp?matchday=2` for tomorrow.
-
-2. **Supplement** — For each league found, scrape `latest.asp?league=xxx`
-   for additional fixtures and league-level aggregate stats.
-
-3. **Score** — Run every match through the shortlist engine.
-   Generate positive flags (high O2.5%, high BTTS%, goal-heavy,
-   PPG mismatch) and negative flags (high FTS%, high CS%).
-   Assign grade: A+ / A / B / C.
-
-4. **Enrich** — For the top 15 shortlisted matches, scrape the
-   `pmatch.asp` detail page for head-to-head, form, and deeper stats.
-
-5. **Store** — Write everything to local JSON files (overwrite).
-   No database. No archive. Just the latest snapshot.
-
-6. **Serve** — Express serves the cached JSON via API endpoints.
-   The HTML dashboard reads the API. No live scraping on page load.
-
-7. **Schedule** — Cron runs the full cycle every 6 hours.
-   Manual refresh available via dashboard button.
-
 ---
 
-## SoccerSTATS pages used
+## Directional Scoring
 
-| Page | URL pattern | Purpose | Data extracted |
-|------|------------|---------|----------------|
-| Matches (Sortable #2) | `matches.asp?matchday=1&listing=2` | Primary match discovery | Per-match: O2.5%, BTTS%, FTS%, CS%, W%, TG, PPG, GP |
-| Matches (tomorrow) | `matches.asp?matchday=2&listing=2` | Tomorrow's fixtures | Same as above |
-| Leagues index | `leagues.asp` | Discover all league slugs | League names + URL slugs |
-| League page | `latest.asp?league=xxx` | Supplementary fixtures + league stats | Fixtures, league-level O2.5/BTTS/avg goals |
-| Match detail | `pmatch.asp?...` | Deep analysis for shortlisted matches | H2H, form, goal times, performance |
+Each match is scored in both directions. The higher score determines the recommendation.
 
-### Why Sortable #2?
+### O2.5 Signals (high-scoring match)
+| Signal | Points |
+|---|---|
+| Home O2.5% ≥ 75% | +3 |
+| Home O2.5% ≥ 65% | +2 |
+| Home O2.5% ≥ 55% | +1 |
+| Away O2.5% ≥ 75% | +3 |
+| Away O2.5% ≥ 65% | +2 |
+| Away O2.5% ≥ 55% | +1 |
+| Combined avg TG ≥ 6.0 | +2 |
+| Combined avg TG ≥ 5.0 | +1 |
+| League O2.5% ≥ 55% | +1 |
+| League avg goals ≥ 3.0 | +1 |
+| PPG mismatch | +1 |
+| Home CS% ≥ 35% | −2 |
+| Away CS% ≥ 35% | −2 |
+| Home FTS% ≥ 35% | −2 |
+| Away FTS% ≥ 35% | −2 |
 
-The `listing=2` format gives columns: PPG, TG, W%, CS, FTS, BTS, 2.5+.
-This is exactly the data needed for O2.5 and BTTS investigation scoring.
-The `listing=1` format gives: PPG, TG, GF, GA, 1.5+, 2.5+, 3.5+ — also
-useful but missing BTTS directly.
+### U2.5 Signals (low-scoring match)
+| Signal | Points |
+|---|---|
+| Home CS% ≥ 40% | +2 |
+| Home CS% ≥ 30% | +1 |
+| Away CS% ≥ 40% | +2 |
+| Away CS% ≥ 30% | +1 |
+| Home FTS% ≥ 40% | +2 |
+| Away FTS% ≥ 40% | +2 |
+| Home O2.5% ≤ 40% | +1 |
+| Away O2.5% ≤ 40% | +1 |
+| Combined avg TG ≤ 2.2 | +2 |
+| League O2.5% ≤ 45% | +1 |
+| Home O2.5% ≥ 65% | −2 |
+| Away O2.5% ≥ 65% | −2 |
+| Combined TG ≥ 4.5 | −1 |
 
-### Known limitation: 10-match cap
+**Grade bands** (based on winning direction score):
 
-The public (non-member) version of matches.asp is limited to **10 matches
-maximum**. This is a hard server-side limit from SoccerSTATS. A membership
-removes this cap.
-
-**Mitigation**: We also scrape individual league pages (`latest.asp?league=xxx`)
-which show upcoming fixtures for that league without the 10-match limit.
-However, the per-match stats from league pages are less structured than
-the matches.asp sortable format.
-
-**Recommendation**: If you're serious about this tool, a SoccerSTATS membership
-is worthwhile. The app will automatically process more matches when more are
-returned by the page.
-
----
-
-## Shortlist scoring methodology
-
-Each match is scored by additive flags:
-
-### O2.5 flags
-| Condition | Points | Why |
-|-----------|--------|-----|
-| Home O2.5% ≥ 70 | +3 | Very strong goals signal |
-| Home O2.5% ≥ 60 | +2 | Strong goals signal |
-| Home O2.5% ≥ 50 | +1 | Moderate goals signal |
-| Away O2.5% ≥ 70 | +3 | Very strong goals signal |
-| Away O2.5% ≥ 60 | +2 | Strong goals signal |
-| Away O2.5% ≥ 50 | +1 | Moderate goals signal |
-| Home avg TG ≥ 2.5 | +1 | Goal-heavy team |
-| Away avg TG ≥ 2.5 | +1 | Goal-heavy team |
-| Combined avg TG ≥ 5.0 | +1 | Both teams goal-heavy |
-| League O2.5% ≥ 50 | +1 | High-scoring league |
-| League avg goals ≥ 2.8 | +1 | High-scoring league |
-| PPG mismatch | +1 | Dominant vs weak → goals |
-
-### BTTS flags
-| Condition | Points | Why |
-|-----------|--------|-----|
-| Home BTTS% ≥ 70 | +3 | Very strong BTTS signal |
-| Home BTTS% ≥ 60 | +2 | Strong BTTS signal |
-| Home BTTS% ≥ 50 | +1 | Moderate BTTS signal |
-| Away BTTS% ≥ 70 | +3 | Very strong BTTS signal |
-| Away BTTS% ≥ 60 | +2 | Strong BTTS signal |
-| Away BTTS% ≥ 50 | +1 | Moderate BTTS signal |
-| League BTTS% ≥ 50 | +1 | High-BTTS league |
-
-### Negative flags
-| Condition | Points | Why |
-|-----------|--------|-----|
-| Home FTS% ≥ 40 | -1 | Home often fails to score |
-| Away FTS% ≥ 40 | -1 | Away often fails to score |
-| Home CS% ≥ 40 | -1 | Home keeps clean sheets (less BTTS) |
-| Away CS% ≥ 40 | -1 | Away keeps clean sheets (less BTTS) |
-
-### Grade bands
 | Grade | Score | Meaning |
-|-------|-------|---------|
-| A+ | ≥ 8 | Very strong investigation candidate |
-| A | ≥ 6 | Strong candidate |
-| B | ≥ 4 | Worth a look |
-| C | ≥ 3 | Borderline — minimum for shortlist |
+|---|---|---|
+| A+ | ≥ 10 | Very strong candidate |
+| A | ≥ 7 | Strong candidate |
+| B | ≥ 5 | Worth investigating |
 
 ---
 
-## Data storage
+## Probability Model
+
+**P(Over 2.5)** — weighted average of:
+- Home team O2.5% (weight 0.35)
+- Away team O2.5% (weight 0.35)
+- League O2.5% (weight 0.10)
+- Combined TG signal (weight 0.20)
+
+**P(Under 2.5)** = 1 − P(Over 2.5)
+
+**Fair odds** = 1 / probability
+
+**Edge** = (market odds / fair odds − 1) × 100%
+
+This is the baseline model. Future versions will add xG-based Poisson modelling once the baseline is calibrated.
+
+---
+
+## Three-Snapshot Odds Capture
+
+| Snapshot | Timing | Purpose |
+|---|---|---|
+| `tip_time` | When shortlisted (6h cycle) | Baseline — what you'd bet at immediately |
+| `pre_kickoff` | 25–35 mins before kickoff | Post-lineup price — best actionable price |
+| `closing` | As close to kickoff as possible | CLV reference |
+
+Price movement from tip_time → pre_kickoff is tracked as a signal. Shortened odds = market agrees with your model. Drifted odds = lineup news changed things.
+
+---
+
+## Odds Source
+
+**The-Odds-API, UK region** gives access to:
+- Bet365
+- Pinnacle (sharpest reference for true probability)
+- William Hill
+- Betfair Exchange
+- Paddy Power, Coral, Ladbrokes, and others
+
+UK region is used instead of AU because:
+- AU region doesn't offer O2.5 totals for EPL
+- UK region includes Pinnacle — best sharp reference book
+- Dropping AU halves quota usage per API call
+
+---
+
+## Performance Tracking
+
+The Performance tab tracks O2.5 and U2.5 **independently**:
+
+- **Hit rate** — % of predictions correct
+- **Mean model probability** — average confidence at tip-time
+- **Brier score** — calibration quality (lower = better; 0.25 = coin flip)
+- **Mean edge at tip** — average price advantage at shortlist time
+- **Mean CLV** — how much tip-time price beat the closing line
+
+Tracking separately matters because Over and Under models have different calibration characteristics and will need independent tuning.
+
+---
+
+## Data Storage
 
 ```
 data/
-├── discovered-matches.json   # All matches with scores
-├── leagues.json              # All discovered league slugs
-├── shortlist.json            # Only shortlisted matches
-├── meta.json                 # Refresh metadata
-└── match-details/
-    └── <match-id>.json       # Deep analysis per match
+├── shortlist.json              # Current shortlist (overwritten each cycle)
+├── discovered-matches.json     # All bettable matches scored (overwritten)
+├── meta.json                   # Refresh metadata
+├── match-details/              # Per-match deep stats (overwritten)
+└── history/                    # Append-only — never overwritten
+    ├── predictions.jsonl       # One record per match: market = over_2.5 or under_2.5
+    ├── results.jsonl           # Settled results
+    └── closing-odds.jsonl      # All three snapshots: tip_time, pre_kickoff, closing
 ```
-
-All files are **overwritten** on each refresh. No history.
-JSON format, human-readable.
 
 ---
 
-## API endpoints
+## API Endpoints
 
-| Method | Path | Returns |
-|--------|------|---------|
+| Method | Path | Description |
+|---|---|---|
 | GET | `/api/status` | Refresh state + metadata |
-| GET | `/api/shortlist` | Shortlisted matches array |
-| GET | `/api/matches` | All discovered matches |
+| GET | `/api/shortlist` | Shortlisted matches with direction, probability, edge |
+| GET | `/api/matches` | All discovered bettable matches |
 | GET | `/api/leagues` | All discovered leagues |
-| GET | `/api/match/:id` | Detail for one match |
+| GET | `/api/match/:id` | Match detail page data |
+| GET | `/api/stats` | Performance stats — O2.5 and U2.5 independently |
+| GET | `/api/predictions` | Raw prediction history (last 100) |
 | POST | `/api/refresh` | Trigger manual refresh |
-
-### Future endpoints (not yet implemented)
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/api/odds/:id` | Bookmaker odds for a match |
-| GET | `/api/value` | Value-flagged matches |
-| POST | `/api/execute` | Place a bet (phase 3) |
+| POST | `/api/settle` | Trigger manual settlement + pre-kickoff odds capture |
 
 ---
 
-## Setup on Unraid
+## Setup
 
-### Option A: Docker Compose (recommended for first setup)
+```bash
+scp -r goalscout/ root@<unraid-ip>:/mnt/user/appdata/goalscout/
+cd /mnt/user/appdata/goalscout
+docker compose up -d
+# Dashboard at http://<unraid-ip>:3030
+```
 
-1. Copy the entire `goalscout/` folder to your Unraid server:
-   ```
-   scp -r goalscout/ root@<unraid-ip>:/mnt/user/appdata/goalscout/
-   ```
+### Deploy changes
 
-2. SSH into Unraid:
-   ```
-   ssh root@<unraid-ip>
-   cd /mnt/user/appdata/goalscout
-   docker compose up -d
-   ```
+```bash
+cd /mnt/user/appdata/goalscout
+docker compose down
+docker rmi goalscout goalscout-goalscout 2>/dev/null || true
+docker builder prune -f
+docker compose up --build -d
+docker logs -f goalscout
+```
 
-3. Access the dashboard at `http://<unraid-ip>:3000`
-
-### Option B: Manual Docker build
-
-1. Copy files to Unraid as above.
-
-2. Build the image:
-   ```
-   cd /mnt/user/appdata/goalscout
-   docker build -t goalscout .
-   ```
-
-3. Run the container:
-   ```
-   docker run -d \
-     --name goalscout \
-     --restart unless-stopped \
-     -p 3000:3000 \
-     -v /mnt/user/appdata/goalscout/data:/app/data \
-     goalscout
-   ```
-
-### Option C: Unraid Community Applications template
-
-Create a template in Unraid's Docker UI:
-
-| Field | Value |
-|-------|-------|
-| Name | GoalScout |
-| Repository | (use local build path) |
-| Network Type | Bridge |
-| Port Mapping | Host: 3000 → Container: 3000 |
-| Volume Mapping | Host: /mnt/user/appdata/goalscout/data → Container: /app/data |
-| Extra Parameters | --restart unless-stopped |
-
-### Verify it's working
-
-1. Visit `http://<unraid-ip>:3000`
-2. The dashboard should show "Refreshing..." on first load
-3. After 1-2 minutes, matches should appear
-4. Check logs: `docker logs goalscout`
-
-### Persistent data
-
-The `/app/data` volume contains all cached JSON files.
-Map this to `/mnt/user/appdata/goalscout/data` on Unraid
-so data survives container restarts.
+> Always use `docker compose up --build` — never `docker build` separately. Compose builds `goalscout-goalscout`; a separate build creates a different `goalscout` image that compose ignores.
 
 ---
 
-## Assumptions and limitations
+## Roadmap
 
-### Assumptions
-1. SoccerSTATS uses server-rendered HTML tables (not client-side JS).
-   Verified: the site uses classic ASP with HTML tables.
+**Phase 1 — Current**
+O2.5/U2.5 directional model, three-snapshot odds, clean calibration data, accurate results source.
 
-2. The Sortable #2 column order (PPG/TG/W%/CS/FTS/BTS/2.5+) is stable.
-   If SoccerSTATS reorders columns, the parser will extract wrong data.
-   The code logs warnings when expected patterns don't match.
+**Phase 2 — Next**
+xG from FBref, calibration pass at 200+ settled predictions, probability weight tuning per direction.
 
-3. League slugs in URLs (e.g., `league=italy`, `league=germany2`) are
-   stable identifiers. If they change, league discovery still works
-   but existing cached data may not correlate.
+**Phase 3 — Future Modules**
+BTTS as add-on module (needs xG layer first). Draw No Bet, Team Totals, First Half O/U built on the same core engine.
 
-4. SoccerSTATS tolerates polite scraping (1.5s delay between requests).
-   The app makes ~15-30 requests per refresh cycle, spread over minutes.
-
-### Known limitations
-
-1. **10-match cap** on the public matches.asp page. Members get all matches.
-   League-page scraping partially mitigates this but with less structured data.
-
-2. **Cup matches often lack stats**. When SoccerSTATS doesn't have enough
-   season data for a cup tie, stat columns are empty. The app handles this
-   gracefully (shows "No stats available").
-
-3. **League page parsing is best-effort**. The `latest.asp` pages have
-   inconsistent layouts across leagues. The parser uses heuristics
-   (pmatch links, time patterns, team name patterns) that may miss some
-   fixtures in unusual layouts.
-
-4. **Match detail parsing is regex-based**. The `pmatch.asp` pages contain
-   rich data in complex table layouts. The current parser extracts text
-   blocks and searches for patterns. It will miss some structured data.
-   This is intentionally kept simple for phase 1.
-
-5. **No odds data**. Phase 1 has no bookmaker integration. The shortlist
-   answers "worth investigating?" not "is there value?".
-
-6. **Selector fragility**. If SoccerSTATS changes their HTML structure,
-   the parsers will break. The code is designed to degrade gracefully
-   (return empty data, log warnings) rather than crash.
+**Phase 4 — Automation**
+Betfair Exchange integration, pre-match only (AU regulatory context).
 
 ---
 
-## Future extension path
+## What This Is Not
 
-### Phase 2: Odds ingestion + value detection
+- Not a tipster or tip-finder
+- Not an in-play tool
+- Not sentiment-based
+- Not ML-driven yet — baseline must be validated first
 
-**Architecture additions:**
-```
-src/
-├── odds/
-│   ├── provider.js        # Abstract odds provider interface
-│   ├── oddschecker.js     # Scrape OddsChecker (or similar)
-│   ├── betfair.js         # Betfair Exchange API
-│   └── odds-cache.js      # Local odds cache
-├── engine/
-│   ├── shortlist.js       # (existing)
-│   ├── fair-price.js      # Calculate implied probability
-│   └── value-engine.js    # Compare fair prob vs market odds
-```
-
-**New data files:**
-```
-data/
-├── odds.json              # Latest odds snapshot
-├── value-flags.json       # Matches with identified value
-```
-
-**New API endpoints:**
-- `GET /api/odds/:id` — odds for a match
-- `GET /api/value` — value-flagged matches
-
-**Value calculation:**
-1. Convert shortlist score → estimated fair probability for O2.5 / BTTS
-2. Ingest bookmaker odds → implied probability
-3. If fair prob > implied prob + margin threshold → flag as value
-
-### Phase 3: Bookmaker execution
-
-**Architecture additions:**
-```
-src/
-├── execution/
-│   ├── executor.js        # Abstract bet placement interface
-│   ├── betfair-exec.js    # Betfair API execution
-│   ├── bookmaker-exec.js  # Generic bookmaker execution
-│   ├── watchlist.js       # Match watchlist with alerts
-│   └── stake-engine.js    # Kelly criterion / flat staking
-```
-
-**New data files:**
-```
-data/
-├── watchlist.json          # Tracked matches awaiting execution
-├── execution-log.json     # Placed bet history
-├── bankroll.json          # Bankroll tracking
-```
-
-**New API endpoints:**
-- `POST /api/watch/:id` — add match to watchlist
-- `POST /api/execute` — place a bet
-- `GET /api/history` — execution history
-
-The current code structure (discovery → engine → API → UI) is designed
-so these layers can be added alongside without restructuring.
-
----
-
-## Tuning the shortlist
-
-Edit `src/config.js` → `THRESHOLDS` to adjust:
-
-- `O25_FLAG`: minimum O2.5% to generate a flag (default 50)
-- `BTTS_FLAG`: minimum BTTS% to generate a flag (default 50)
-- `TG_FLAG`: minimum avg total goals for a flag (default 2.5)
-- `PPG_STRONG`: PPG threshold for "dominant" team (default 2.0)
-- `PPG_WEAK`: PPG threshold for "weak" team (default 1.0)
-- `FTS_HIGH`: FTS% threshold for negative flag (default 40)
-- `CS_HIGH`: CS% threshold for negative flag (default 40)
-- `MIN_SCORE`: minimum composite score for shortlist (default 3)
-
-Lower `MIN_SCORE` to see more matches; raise it for tighter filtering.
-
----
-
-## Troubleshooting
-
-| Problem | Cause | Fix |
-|---------|-------|-----|
-| No matches shown | First refresh still running | Wait 1-2 minutes, check `docker logs` |
-| Only 10 matches | Public SoccerSTATS limit | Get membership, or rely on league page supplements |
-| Stats all show "—" | Cup matches or early-season | Normal — cup ties often lack season stats |
-| Refresh errors | SoccerSTATS down or blocking | Check logs; increase `REQUEST_DELAY_MS` in config |
-| Empty shortlist | No matches meet threshold | Lower `MIN_SCORE` in config, or no matches today |
+The goal is trustworthy probabilities, clean calibration data, and measurable edge. Everything else follows from that.
