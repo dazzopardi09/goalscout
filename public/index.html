@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GoalScout — Match Investigation Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#070d16;--panel:#08101b;--panel-2:#0b1220;--panel-3:#0f1828;
+  --text:#e5edf8;--muted:#8b9ab0;--muted-2:#66758c;--line:rgba(255,255,255,0.08);
+  --green:#6ee7b7;--green-2:#34d399;--lime:#bef264;--amber:#fbbf24;
+  --red:#f87171;--cyan:#67e8f9;--violet:#c4b5fd;--blue:#7dd3fc;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
+.app{max-width:1720px;margin:0 auto;padding:20px 20px 40px}
+
+.hero{border:1px solid var(--line);border-radius:28px;padding:24px;
+  background:radial-gradient(circle at top left,rgba(34,197,94,.12),transparent 22%),
+  radial-gradient(circle at top right,rgba(59,130,246,.12),transparent 24%),
+  linear-gradient(180deg,#0b1322,#09101c);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.hero-inner{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.brand h1{font-size:30px;font-weight:700;letter-spacing:-0.03em;color:#a7f3d0}
+.brand h1 span{color:#64748b;font-weight:500}
+.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:#94a3b8;border-radius:999px;padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.22em}
+.hero p{max-width:900px;font-size:14px;color:#94a3b8;line-height:1.5}
+.hero-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.status{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:rgba(255,255,255,.04);padding:14px 16px;border-radius:18px;color:#cbd5e1;font-size:14px}
+.dot{width:10px;height:10px;border-radius:999px;background:#4ade80;box-shadow:0 0 16px rgba(74,222,128,.9)}
+.dot.running{background:var(--amber);box-shadow:0 0 16px rgba(251,191,36,.9);animation:pulse 1s infinite}
+.dot.error{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.btn{border:1px solid rgba(52,211,153,.3);background:rgba(16,185,129,.15);color:#d1fae5;padding:14px 18px;border-radius:18px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{background:rgba(16,185,129,.25)}.btn:disabled{opacity:.5;cursor:not-allowed}
+.loading-bar{height:2px;background:var(--line);overflow:hidden;position:relative}
+.loading-bar.active::after{content:'';position:absolute;left:-40%;width:40%;height:100%;background:var(--green);animation:loading 1.2s ease-in-out infinite}
+@keyframes loading{0%{left:-40%}100%{left:100%}}
+
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px;max-width:600px}
+.stat{border-radius:24px;border:1px solid var(--line);padding:20px;min-height:100px}
+.stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.22em;color:var(--muted-2)}
+.stat-value{margin-top:12px;font-size:36px;font-weight:700;letter-spacing:-.03em}
+.tone-amber{background:rgba(245,158,11,.10);border-color:rgba(251,191,36,.2)}
+.tone-blue{background:rgba(59,130,246,.10);border-color:rgba(125,211,252,.2)}
+
+.filters{margin-top:16px;border-radius:24px;border:1px solid var(--line);background:var(--panel-2);padding:16px}
+.filters-inner{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.filter-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.filter-group{display:flex;align-items:center;gap:8px}
+.filter-label{font-size:11px;text-transform:uppercase;letter-spacing:.22em;color:var(--muted-2)}
+.filter-chip{border:1px solid var(--line);background:rgba(255,255,255,.03);color:#cbd5e1;padding:10px 12px;border-radius:12px;font-size:14px;cursor:pointer;font-family:inherit}
+.filter-chip.active{border-color:rgba(52,211,153,.3);background:rgba(16,185,129,.15);color:#bbf7d0}
+.filter-chip:hover{border-color:rgba(255,255,255,.15)}
+.league-select{min-width:260px;border:1px solid var(--line);background:var(--panel-3);color:#cbd5e1;padding:14px 16px;border-radius:16px;font-size:14px;font-family:inherit}
+
+.table-shell{margin-top:16px;overflow-x:auto;border-radius:30px;border:1px solid var(--line);background:var(--panel);box-shadow:0 24px 80px rgba(0,0,0,.32)}
+table{width:100%;border-collapse:collapse;min-width:1500px}
+thead th{padding:16px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted-2);text-align:left;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel);z-index:10;white-space:nowrap}
+thead th:hover{color:var(--muted)}
+thead th.sorted-asc::after{content:' ▲';color:var(--green)}
+thead th.sorted-desc::after{content:' ▼';color:var(--green)}
+tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s}
+tbody tr:hover{background:rgba(255,255,255,.02)}
+td{padding:14px 12px;vertical-align:middle}
+
+.badge{display:inline-flex;align-items:center;justify-content:center;min-width:50px;padding:8px 12px;border-radius:12px;font-size:14px;font-weight:700}
+.grade-aplus{border:1px solid rgba(74,222,128,.3);background:rgba(16,185,129,.15);color:#6ee7b7}
+.grade-a{border:1px solid rgba(190,242,100,.3);background:rgba(132,204,22,.14);color:#bef264}
+.grade-b{border:1px solid rgba(251,191,36,.3);background:rgba(245,158,11,.15);color:#fcd34d}
+.grade-c{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#94a3b8}
+
+.score-big{font-size:24px;font-weight:700;letter-spacing:-.03em;color:var(--cyan)}
+.ko-cell{font-size:13px;color:#cbd5e1;line-height:1.4}
+.ko-date{font-size:11px;color:var(--muted-2)}
+.league-code span{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.03);padding:6px 10px;border-radius:10px;font-size:12px;color:#cbd5e1;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.match-title{font-size:14px;font-weight:600;letter-spacing:-.01em;color:#f8fafc}
+
+.signal{border:1px solid rgba(103,232,249,.10);background:rgba(6,182,212,.05);border-radius:14px;padding:8px 10px;min-width:120px}
+.signal-label{font-size:10px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted-2)}
+.signal-value{margin-top:3px;font-size:16px;font-weight:700;letter-spacing:-.02em}
+.signal-value span{color:var(--muted-2);font-weight:500}
+.pct-hot{color:var(--green)}.pct-warm{color:var(--amber)}.pct-cold{color:var(--muted)}
+
+.mini-score{display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);border-radius:14px;min-height:44px;font-size:20px;font-weight:700;color:var(--cyan);min-width:48px}
+
+.odds-cell{min-width:130px}
+.odds-box{border:1px solid rgba(196,181,253,.2);background:rgba(139,92,246,.08);border-radius:14px;padding:8px 10px}
+.odds-price{font-size:18px;font-weight:700;color:var(--violet)}
+.odds-bookie{font-size:10px;color:var(--muted-2);margin-top:2px;text-transform:uppercase;letter-spacing:.1em}
+.odds-none{color:var(--muted-2);font-size:12px;font-style:italic}
+
+.flags{display:flex;flex-wrap:wrap;gap:5px;max-width:320px}
+.flag{border:1px solid rgba(74,222,128,.2);background:rgba(16,185,129,.10);color:#d1fae5;border-radius:999px;padding:4px 9px;font-size:11px}
+.flag.warn{border-color:rgba(248,113,113,.2);background:rgba(239,68,68,.10);color:#fecaca}
+.flag.hot{border-color:rgba(74,222,128,.35);background:rgba(16,185,129,.2);color:#a7f3d0}
+
+.actions{display:flex;gap:6px}
+.action{border:1px solid var(--line);background:rgba(255,255,255,.04);color:#ddd6fe;border-radius:10px;padding:7px 10px;font-size:12px;text-decoration:none}
+.action:hover{border-color:rgba(255,255,255,.15);color:#f8fafc}
+
+.empty-state{text-align:center;padding:4rem 2rem;color:var(--muted)}
+.empty-state h2{font-size:16px;color:var(--text);margin-bottom:8px}
+
+.footer{margin-top:16px;border-top:1px solid var(--line);padding:16px 0;display:flex;justify-content:space-between;font-size:12px;color:var(--muted-2);flex-wrap:wrap;gap:8px}
+.footer a{color:var(--violet);text-decoration:none}
+
+.tip{position:relative;display:inline-flex}
+.tip .tip-text{visibility:hidden;background:#1e293b;color:#e2e8f0;font-size:12px;font-weight:400;letter-spacing:0;text-transform:none;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);position:absolute;z-index:100;top:100%;left:50%;transform:translateX(-50%);margin-top:6px;width:240px;line-height:1.5;white-space:normal;box-shadow:0 8px 24px rgba(0,0,0,.4);pointer-events:none}
+.tip:hover .tip-text{visibility:visible}
+
+@media(max-width:768px){.stats{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<section class="hero">
+  <div class="hero-inner">
+    <div>
+      <div class="brand"><h1>GoalScout<span>.v2</span></h1><span class="pill">bettable · investigation</span></div>
+      <p>Bettable-first analysis. Only matches with active AU betting markets are scored and displayed.</p>
+    </div>
+    <div class="hero-right">
+      <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Loading...</span></div>
+      <button class="btn" id="refreshBtn" onclick="triggerRefresh()">↻ Refresh</button>
+    </div>
+  </div>
+</section>
+<div class="loading-bar" id="loadingBar"></div>
+
+<section class="stats">
+  <div class="stat tone-amber"><div class="stat-label">Shortlisted Matches</div><div class="stat-value" style="color:var(--amber)" id="statShortlisted">—</div></div>
+  <div class="stat tone-blue"><div class="stat-label">Last Updated (AEST)</div><div class="stat-value" style="font-size:20px;color:var(--blue)" id="statUpdated">—</div></div>
+</section>
+
+<section class="filters">
+  <div class="filters-inner">
+    <div class="filter-row">
+      <div class="filter-group">
+        <span class="filter-label">Grade</span>
+        <button class="filter-chip active" data-group="grade" data-val="all">All</button>
+        <button class="filter-chip" data-group="grade" data-val="A+">A+</button>
+        <button class="filter-chip" data-group="grade" data-val="A">A</button>
+        <button class="filter-chip" data-group="grade" data-val="B">B</button>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Focus</span>
+        <button class="filter-chip active" data-group="focus" data-val="all">All</button>
+        <button class="filter-chip" data-group="focus" data-val="o25">O2.5</button>
+        <button class="filter-chip" data-group="focus" data-val="btts">BTTS</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">League</span>
+      <select class="league-select" id="leagueFilter" onchange="applyFilters()"><option value="all">All leagues</option></select>
+    </div>
+  </div>
+</section>
+
+<section class="table-shell">
+  <table>
+    <thead><tr>
+      <th data-sort="grade"><span class="tip">Grade<span class="tip-text">Investigation priority. A+ = very strong signals from multiple indicators. A = strong. B = worth a look.</span></span></th>
+      <th data-sort="score"><span class="tip">Score<span class="tip-text">Total points from all flags combined. Each positive flag adds 1-3 points, negatives subtract 1-2. Higher = more reasons to investigate.</span></span></th>
+      <th data-sort="kickoff"><span class="tip">Kickoff<span class="tip-text">Match date and kickoff time from SoccerSTATS.</span></span></th>
+      <th data-sort="league">League</th>
+      <th data-sort="match">Match</th>
+      <th><span class="tip">O2.5<span class="tip-text">Over 2.5 goals %. Home team (home games only) / Away team (away games only). Shows what % of each team's matches have 3+ total goals.</span></span></th>
+      <th><span class="tip">BTTS<span class="tip-text">Both Teams To Score %. Shows what % of matches see both sides score at least once. High on both sides = strong BTTS signal.</span></span></th>
+      <th data-sort="o25score"><span class="tip">O2.5↑<span class="tip-text">Sub-score from Over 2.5 related indicators only. Helps you see if the total score is driven by goals signals or BTTS signals.</span></span></th>
+      <th data-sort="bttsScore"><span class="tip">BTTS↑<span class="tip-text">Sub-score from BTTS indicators only. If both O2.5↑ and BTTS↑ are high, the match has dual-signal strength.</span></span></th>
+      <th><span class="tip">Best Odds<span class="tip-text">Best available Over 2.5 goals odds from AU/UK bookmakers via The-Odds-API. Shows decimal price and bookmaker name.</span></span></th>
+      <th data-sort="edge"><span class="tip">Model<span class="tip-text">Model's estimated probability of Over 2.5, converted to fair odds. Edge % = how much the market price exceeds the model's fair price. Positive edge = potential value. This is baseline-v1 — accuracy will improve with xG data and calibration.</span></span></th>
+      <th><span class="tip">Flags<span class="tip-text">Specific reasons this match was shortlisted. Green = positive signal (high %, goal-heavy). Red = warning (team often blanks or keeps clean sheets).</span></span></th>
+      <th>Links</th>
+    </tr></thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</section>
+
+<div class="empty-state" id="emptyState" style="display:none">
+  <h2>No matches shortlisted</h2>
+  <p>No bettable matches meet the investigation threshold. Check back later or refresh.</p>
+</div>
+
+<div class="footer">
+  <span>Data: <a href="https://www.soccerstats.com" target="_blank">SoccerSTATS.com</a> · Odds: <a href="https://the-odds-api.com" target="_blank">The-Odds-API</a> · Investigation tool, not betting advice.</span>
+  <span>GoalScout v2 · Bettable-first · Melbourne AEST</span>
+</div>
+
+</div>
+<script>
+let shortlistData=[];
+let currentSort={key:'score',dir:'desc'};
+let filters={grade:'all',focus:'all',league:'all'};
+
+function pctClass(v){if(v==null)return'pct-cold';if(v>=65)return'pct-hot';if(v>=50)return'pct-warm';return'pct-cold'}
+function gradeClass(g){if(g==='A+')return'grade-aplus';if(g==='A')return'grade-a';if(g==='B')return'grade-b';return'grade-c'}
+function flagClass(f){if(f.startsWith('🔥'))return'hot';if(f.startsWith('⚠'))return'warn';return''}
+function fmtPct(v){return v==null?'—':v+'%'}
+
+// Format the day label — use commence_time from odds if available, otherwise Today/Tomorrow
+function fmtDate(m) {
+  if (m.odds && m.odds.commenceTime) {
+    const d = new Date(m.odds.commenceTime);
+    return d.toLocaleDateString('en-AU', {weekday:'short', day:'numeric', month:'short', timeZone:'Australia/Melbourne'});
+  }
+  return m.day || '';
+}
+
+function fmtKickoff(m) {
+  // If we have commence_time from odds API, use that (it's proper UTC)
+  if (m.odds && m.odds.commenceTime) {
+    const d = new Date(m.odds.commenceTime);
+    return d.toLocaleTimeString('en-AU', {hour:'2-digit', minute:'2-digit', hour12:false, timeZone:'Australia/Melbourne'});
+  }
+  return m.kickoff || '—';
+}
+
+async function loadStatus(){
+  try{
+    const r=await fetch('/api/status');const d=await r.json();
+    document.getElementById('statusDot').className='dot '+(d.status==='running'?'running':d.status==='error'?'error':'');
+    if(d.status==='running'){
+      document.getElementById('statusText').textContent=d.progress||'Refreshing...';
+      document.getElementById('loadingBar').classList.add('active');
+      document.getElementById('refreshBtn').disabled=true;
+    }else{
+      document.getElementById('statusText').textContent=d.lastRefresh?'Last: '+new Date(d.lastRefresh).toLocaleTimeString('en-AU',{timeZone:'Australia/Melbourne'}):(d.lastError||'Ready');
+      document.getElementById('loadingBar').classList.remove('active');
+      document.getElementById('refreshBtn').disabled=false;
+    }
+    if(d.meta){
+      document.getElementById('statShortlisted').textContent=d.meta.shortlistCount??'—';
+      if(d.meta.lastRefresh){
+        const dt=new Date(d.meta.lastRefresh);
+        document.getElementById('statUpdated').textContent=dt.toLocaleDateString('en-AU',{day:'2-digit',month:'short',timeZone:'Australia/Melbourne'})+' · '+dt.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',timeZone:'Australia/Melbourne'});
+      }
+    }
+    return d.status;
+  }catch{return'error'}
+}
+
+async function loadShortlist(){
+  try{const r=await fetch('/api/shortlist');shortlistData=await r.json();populateLeagueFilter();renderTable()}catch{}
+}
+
+function populateLeagueFilter(){
+  const s=document.getElementById('leagueFilter');
+  const ls=[...new Set(shortlistData.map(m=>m.league))].sort();
+  while(s.options.length>1)s.remove(1);
+  ls.forEach(l=>{const o=document.createElement('option');o.value=l;o.textContent=l;s.appendChild(o)});
+}
+
+function getFilteredData(){
+  return shortlistData.filter(m=>{
+    if(filters.grade!=='all'&&m.grade!==filters.grade)return false;
+    if(filters.league!=='all'&&m.league!==filters.league)return false;
+    if(filters.focus==='o25'&&(m.o25score||0)<3)return false;
+    if(filters.focus==='btts'&&(m.bttsScore||0)<3)return false;
+    return true;
+  });
+}
+
+function sortData(data){
+  const{key,dir}=currentSort;const mult=dir==='asc'?1:-1;
+  return[...data].sort((a,b)=>{
+    let va,vb;
+    switch(key){
+      case'grade':const go={'A+':4,'A':3,'B':2,'C':1};va=go[a.grade]||0;vb=go[b.grade]||0;break;
+      case'score':va=a.score;vb=b.score;break;
+      case'kickoff':
+        // Sort by commence_time if available, else by kickoff string
+        va=a.odds?.commenceTime||a.kickoff||'';vb=b.odds?.commenceTime||b.kickoff||'';break;
+      case'league':va=a.league||'';vb=b.league||'';break;
+      case'match':va=a.homeTeam||'';vb=b.homeTeam||'';break;
+      case'o25score':va=a.o25score||0;vb=b.o25score||0;break;
+      case'bttsScore':va=a.bttsScore||0;vb=b.bttsScore||0;break;
+      case'edge':va=a.analysis?.o25?.edge??-999;vb=b.analysis?.o25?.edge??-999;break;
+      default:va=a.score;vb=b.score;
+    }
+    if(typeof va==='string')return mult*va.localeCompare(vb);
+    return mult*((va||0)-(vb||0));
+  });
+}
+
+function renderTable(){
+  const tbody=document.getElementById('tableBody');
+  const empty=document.getElementById('emptyState');
+  const filtered=getFilteredData();
+  const sorted=sortData(filtered);
+  if(sorted.length===0){tbody.innerHTML='';empty.style.display='block';return}
+  empty.style.display='none';
+
+  tbody.innerHTML=sorted.map(m=>{
+    const hO=fmtPct(m.home?.o25pct),aO=fmtPct(m.away?.o25pct);
+    const hB=fmtPct(m.home?.btsPct),aB=fmtPct(m.away?.btsPct);
+    const bestO=Math.max(m.home?.o25pct||0,m.away?.o25pct||0);
+    const bestB=Math.max(m.home?.btsPct||0,m.away?.btsPct||0);
+
+    const flagsHtml=(m.flags||[]).map(f=>`<span class="flag ${flagClass(f)}">${f}</span>`).join('');
+    const ml=m.matchUrl?`<a href="${m.matchUrl}" target="_blank" rel="noopener" class="action">match</a>`:'';
+    const ll=m.leagueUrl?`<a href="${m.leagueUrl}" target="_blank" rel="noopener" class="action">league</a>`:'';
+
+    let oddsHtml='<span class="odds-none">—</span>';
+    if(m.odds&&m.odds.o25){
+      oddsHtml=`<div class="odds-box"><div class="odds-price">${m.odds.o25.price.toFixed(2)}</div><div class="odds-bookie">${m.odds.o25.bookmaker}</div></div>`;
+    }
+
+    // Model probability + edge display
+    let modelHtml='<span class="odds-none">—</span>';
+    const a = m.analysis;
+    if(a && a.o25 && a.o25.probability != null){
+      const prob = (a.o25.probability * 100).toFixed(0);
+      const fair = a.o25.fairOdds ? a.o25.fairOdds.toFixed(2) : '—';
+      const edge = a.o25.edge;
+      let edgeStr = '—';
+      let edgeColor = 'var(--muted-2)';
+      if(edge != null){
+        edgeStr = (edge > 0 ? '+' : '') + edge.toFixed(1) + '%';
+        edgeColor = edge > 5 ? 'var(--green)' : edge > 0 ? 'var(--lime)' : edge > -5 ? 'var(--amber)' : 'var(--red)';
+      }
+      modelHtml=`<div class="odds-box" style="border-color:rgba(103,232,249,.2);background:rgba(6,182,212,.06)">
+        <div style="font-size:13px;color:var(--cyan)">P: ${prob}% · Fair: ${fair}</div>
+        <div style="font-size:16px;font-weight:700;color:${edgeColor};margin-top:3px">Edge: ${edgeStr}</div>
+        <div style="font-size:9px;color:var(--muted-2);margin-top:2px">${a.modelVersion}</div>
+      </div>`;
+    }
+
+    const kickoff = fmtKickoff(m);
+    const dateStr = fmtDate(m);
+
+    return`<tr>
+      <td><span class="badge ${gradeClass(m.grade)}">${m.grade}</span></td>
+      <td><span class="score-big">${m.score}</span></td>
+      <td class="ko-cell">${kickoff}<br><span class="ko-date">${dateStr}</span></td>
+      <td class="league-code"><span title="${m.league||''}">${m.league||m.leagueSlug||'—'}</span></td>
+      <td><div class="match-title">${m.homeTeam} <span style="color:var(--muted-2)">vs</span> ${m.awayTeam}</div></td>
+      <td><div class="signal"><div class="signal-label">O2.5</div><div class="signal-value ${pctClass(bestO)}">${hO} <span>/</span> ${aO}</div></div></td>
+      <td><div class="signal"><div class="signal-label">BTTS</div><div class="signal-value ${pctClass(bestB)}">${hB} <span>/</span> ${aB}</div></div></td>
+      <td><div class="mini-score">${m.o25score||0}</div></td>
+      <td><div class="mini-score">${m.bttsScore||0}</div></td>
+      <td class="odds-cell">${oddsHtml}</td>
+      <td class="odds-cell">${modelHtml}</td>
+      <td><div class="flags">${flagsHtml}</div></td>
+      <td><div class="actions">${ml}${ll}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+async function triggerRefresh(){document.getElementById('refreshBtn').disabled=true;await fetch('/api/refresh',{method:'POST'});pollUntilDone()}
+async function pollUntilDone(){const s=await loadStatus();if(s==='running')setTimeout(pollUntilDone,2000);else await loadShortlist()}
+function applyFilters(){filters.league=document.getElementById('leagueFilter').value;renderTable()}
+
+document.querySelectorAll('thead th[data-sort]').forEach(th=>{
+  th.addEventListener('click',()=>{
+    const key=th.dataset.sort;
+    if(currentSort.key===key)currentSort.dir=currentSort.dir==='desc'?'asc':'desc';
+    else currentSort={key,dir:'desc'};
+    document.querySelectorAll('thead th').forEach(t=>t.classList.remove('sorted-asc','sorted-desc'));
+    th.classList.add(currentSort.dir==='asc'?'sorted-asc':'sorted-desc');
+    renderTable();
+  });
+});
+
+document.querySelectorAll('.filter-chip').forEach(chip=>{
+  chip.addEventListener('click',()=>{
+    const group=chip.dataset.group;if(!group)return;
+    document.querySelectorAll(`.filter-chip[data-group="${group}"]`).forEach(c=>c.classList.remove('active'));
+    chip.classList.add('active');filters[group]=chip.dataset.val;renderTable();
+  });
+});
+
+async function init(){const s=await loadStatus();await loadShortlist();if(s==='running')pollUntilDone();setInterval(loadStatus,30000)}
+init();
+</script>
+</body>
+</html>

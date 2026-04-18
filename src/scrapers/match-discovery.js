@@ -1,0 +1,358 @@
+// src/scrapers/match-discovery.js
+// ─────────────────────────────────────────────────────────────
+// Discovers today's matches from SoccerSTATS.
+//
+// STRATEGY — TWO-PHASE DISCOVERY:
+//
+// Phase A: Scrape the matches.asp?listing=2 page (Sortable #2).
+//   This page shows PPG, TG, W%, CS, FTS, BTS, 2.5+ for each
+//   match — exactly the data we need for shortlisting.
+//   ⚠ PUBLIC LIMITATION: Only shows max 10 matches.
+//   Members get all matches; public gets a truncated list.
+//
+// Phase B: For each league discovered on the page, also scrape
+//   the individual latest.asp?league=xxx page, which shows
+//   upcoming fixtures for that league (not limited to 10).
+//   These pages have different data layouts (team-level stats
+//   in tables, not per-match rows), so we extract what we can.
+//
+// This dual approach means:
+//   - We always get the rich per-match stats from matches.asp
+//   - We supplement with additional matches from league pages
+//   - We are NOT limited to a hand-picked league list
+//
+// KNOWN HTML STRUCTURE (matches.asp?listing=2):
+//   Table rows containing columns:
+//     Country | 2.5+ | BTS | FTS | CS | W% | TG | PPG | GP | scope |
+//     HomeTeam | time | AwayTeam |
+//     scope | GP | PPG | TG | W% | CS | FTS | BTS | 2.5+
+//
+//   League header rows contain links like:
+//     latest.asp?league=italy → "ITALY"
+//     leagueview.asp?league=cup-england1 → "CUP-ENGLAND1"
+//
+//   Match rows contain:
+//     pmatch.asp?... links for match detail pages
+//
+// KNOWN HTML STRUCTURE (latest.asp?league=xxx):
+//   Contains "Upcoming matches" or "Next matches" sections.
+//   Match rows with team names and kickoff times.
+//   Team stat tables elsewhere on the page.
+//
+// ASSUMPTIONS:
+//   - SoccerSTATS uses HTML tables (not JS-rendered SPAs).
+//   - Cheerio can parse their markup.
+//   - Column order in Sortable #2 is stable.
+//   - The URL pattern matches.asp?matchday=1&listing=2 gives
+//     today's matches in sortable format.
+//
+// LIMITATIONS:
+//   - If layout changes, selectors break. We log clearly.
+//   - Public 10-match cap on matches.asp is real. League pages
+//     supplement but may have less structured per-match data.
+//   - Cup matches often lack stats (as seen: CUP-ENGLAND1 rows
+//     had empty stat columns). We handle this gracefully.
+// ─────────────────────────────────────────────────────────────
+
+const cheerio = require('cheerio');
+const { fetchPage } = require('../utils/fetcher');
+const { BASE_URL } = require('../config');
+
+/**
+ * Parse a percentage string like "67%" → 67, or "" → null
+ */
+function pct(str) {
+  if (!str) return null;
+  const n = parseFloat(str);
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * Parse a decimal string like "2.53" → 2.53, or "" → null
+ */
+function dec(str) {
+  if (!str) return null;
+  const n = parseFloat(str);
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * Scrape matches.asp with Sortable #2 format.
+ * Returns { matches: [...], leagueSlugs: [...] }
+ */
+async function scrapeMatchesPage(matchday = 1) {
+  // listing=2 gives: PPG / TG / W% / CS / FTS / BTS / 2.5+
+  const url = `${BASE_URL}/matches.asp?matchday=${matchday}&matchdayn=1&listing=2`;
+  console.log(`[matches] fetching ${url}`);
+
+  const html = await fetchPage(url);
+  const $ = cheerio.load(html);
+
+  const matches = [];
+  const leagueSlugs = new Set();
+  let currentLeague = null;
+  let currentLeagueSlug = null;
+
+  // The data is in table rows. We walk all <tr> elements
+  // and detect league headers vs match rows.
+  $('tr').each((_, tr) => {
+    const $tr = $(tr);
+    const cells = $tr.find('td');
+    const cellTexts = [];
+    cells.each((__, td) => cellTexts.push($(td).text().trim()));
+
+    // Detect league header: first cell has a link to latest.asp or leagueview.asp
+    const firstLink = cells.first().find('a[href]').attr('href') || '';
+    const leagueMatch = firstLink.match(/(?:latest|leagueview)\.asp\?league=([a-zA-Z0-9_-]+)/);
+
+    if (leagueMatch) {
+      currentLeagueSlug = leagueMatch[1].toLowerCase();
+      // The league name is the full text of the first cell, cleaned up
+      // It typically contains "COUNTRY" or "COUNTRY - League Name"
+      const rawName = cellTexts[0]?.replace(/\s+/g, ' ').trim() || '';
+      // Remove the short code suffix (e.g. "ITA", "EN", "GER") if it's at the end after the name
+      // The cell typically has: "ITALY ITA" or "England - Premier League EN"
+      // We want to keep the descriptive part
+      const linkText = cells.first().find('a').last().text().trim(); // short code like "ITA"
+      currentLeague = rawName.replace(new RegExp('\\s*' + linkText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$'), '').trim() || rawName || currentLeagueSlug;
+      leagueSlugs.add(currentLeagueSlug);
+    }
+
+    // Detect match row: look for a time pattern (HH:MM) in the cells
+    // and pmatch.asp links
+    const pmatchLink = $tr.find('a[href*="pmatch.asp"]').attr('href') || '';
+    const timeCell = cellTexts.find(t => /^\d{1,2}:\d{2}$/.test(t));
+
+    if (timeCell && currentLeague) {
+      // Sortable #2 column layout (observed):
+      // 0: Country/League link
+      // 1: home 2.5+   2: home BTS   3: home FTS   4: home CS
+      // 5: home W%     6: home TG    7: home PPG   8: home GP
+      // 9: scope(home) 10: HomeTeam  11: time      12: AwayTeam
+      // 13: scope(away) 14: away GP  15: away PPG  16: away TG
+      // 17: away W%    18: away CS   19: away FTS  20: away BTS
+      // 21: away 2.5+
+
+      // Find the time index
+      const timeIdx = cellTexts.indexOf(timeCell);
+      if (timeIdx < 2) return; // malformed row
+
+      // Home team is in the cell before time, away team after
+      const homeTeam = cellTexts[timeIdx - 1] || '';
+      const awayTeam = cellTexts[timeIdx + 1] || '';
+
+      if (!homeTeam || !awayTeam) return;
+
+      // Try to extract stats based on position relative to the row
+      // This is position-sensitive; we use the full cell array
+      const match = {
+        id: `${currentLeagueSlug}_${homeTeam}_${awayTeam}`.replace(/\s+/g, '_').toLowerCase(),
+        league: currentLeague,
+        leagueSlug: currentLeagueSlug,
+        kickoff: timeCell,
+        homeTeam,
+        awayTeam,
+        matchUrl: pmatchLink ? `${BASE_URL}/${pmatchLink}` : null,
+        leagueUrl: `${BASE_URL}/latest.asp?league=${currentLeagueSlug}`,
+
+        home: {
+          o25pct:  pct(cellTexts[1]),
+          btsPct:  pct(cellTexts[2]),
+          ftsPct:  pct(cellTexts[3]),
+          csPct:   pct(cellTexts[4]),
+          winPct:  pct(cellTexts[5]),
+          avgTG:   dec(cellTexts[6]),
+          ppg:     dec(cellTexts[7]),
+          gp:      parseInt(cellTexts[8]) || null,
+        },
+
+        away: {
+          ppg:     dec(cellTexts[timeIdx + 3]),
+          avgTG:   dec(cellTexts[timeIdx + 4]),
+          winPct:  pct(cellTexts[timeIdx + 5]),
+          csPct:   pct(cellTexts[timeIdx + 6]),
+          ftsPct:  pct(cellTexts[timeIdx + 7]),
+          btsPct:  pct(cellTexts[timeIdx + 8]),
+          o25pct:  pct(cellTexts[timeIdx + 9]),
+          gp:      parseInt(cellTexts[timeIdx + 2]) || null,
+        },
+
+        source: 'matches-page',
+        scrapedAt: new Date().toISOString(),
+      };
+
+      // Only add if we got at least some stats
+      const hasStats = match.home.o25pct !== null || match.home.btsPct !== null;
+      match.hasStats = hasStats;
+
+      matches.push(match);
+    }
+  });
+
+  console.log(`[matches] parsed ${matches.length} matches from matches.asp`);
+  console.log(`[matches] discovered ${leagueSlugs.size} league slugs from page`);
+
+  return { matches, leagueSlugs: Array.from(leagueSlugs) };
+}
+
+
+/**
+ * Scrape a single league page (latest.asp?league=xxx) for
+ * upcoming fixtures. This supplements the matches.asp data.
+ *
+ * The league page has a different layout — it shows the full
+ * league table plus upcoming fixtures. We look for fixture
+ * rows that contain match links and kickoff times.
+ *
+ * ⚠ The per-match stats on this page are LESS structured than
+ *   the matches.asp sortable view. We extract what we can,
+ *   but the primary stats source remains matches.asp.
+ */
+async function scrapeLeaguePage(slug) {
+  const url = `${BASE_URL}/latest.asp?league=${slug}`;
+  console.log(`[league-page] fetching ${url}`);
+
+  try {
+    const html = await fetchPage(url);
+    const $ = cheerio.load(html);
+
+    const matches = [];
+    const leagueName = $('title').text().split('|')[0]?.trim() || slug;
+
+    // Look for upcoming match rows with pmatch links
+    $('a[href*="pmatch.asp"]').each((_, el) => {
+      const $link = $(el);
+      const href = $link.attr('href') || '';
+      const $row = $link.closest('tr');
+
+      if (!$row.length) return;
+
+      const cells = [];
+      $row.find('td').each((__, td) => cells.push($(td).text().trim()));
+
+      // Try to find team names and time
+      // Typical pattern: cells contain time, home, score/vs, away
+      const timeCell = cells.find(t => /^\d{1,2}:\d{2}$/.test(t));
+      const linkText = $link.text().trim();
+
+      // The pmatch link text often contains "team1 - team2"
+      const teamsFromLink = linkText.match(/^(.+?)\s*[-–]\s*(.+)$/);
+
+      if (teamsFromLink) {
+        const match = {
+          id: `${slug}_${teamsFromLink[1]}_${teamsFromLink[2]}`.replace(/\s+/g, '_').toLowerCase(),
+          league: leagueName,
+          leagueSlug: slug,
+          kickoff: timeCell || null,
+          homeTeam: teamsFromLink[1].trim(),
+          awayTeam: teamsFromLink[2].trim(),
+          matchUrl: `${BASE_URL}/${href}`,
+          leagueUrl: url,
+          home: {},
+          away: {},
+          hasStats: false,
+          source: 'league-page',
+          scrapedAt: new Date().toISOString(),
+        };
+
+        matches.push(match);
+      }
+    });
+
+    // Also try to extract league-level BTTS/O2.5 stats from
+    // summary tables on the page (these appear in league overview sections)
+    let leagueStats = {};
+    const pageText = $.text();
+
+    // Look for patterns like "Over 2.5 goals: 48%" or "BTTS: 52%"
+    const o25Match = pageText.match(/over\s*2\.5.*?(\d+(?:\.\d+)?)\s*%/i);
+    const bttsMatch = pageText.match(/(?:both\s*teams?\s*(?:to\s*)?scor|BTS|BTTS).*?(\d+(?:\.\d+)?)\s*%/i);
+    const avgGoals = pageText.match(/(?:average|avg).*?goals.*?(\d+\.\d+)/i);
+
+    if (o25Match) leagueStats.o25pct = parseFloat(o25Match[1]);
+    if (bttsMatch) leagueStats.btsPct = parseFloat(bttsMatch[1]);
+    if (avgGoals) leagueStats.avgGoals = parseFloat(avgGoals[1]);
+
+    return { matches, leagueStats, slug, name: leagueName };
+  } catch (err) {
+    console.warn(`[league-page] failed to scrape ${slug}: ${err.message}`);
+    return { matches: [], leagueStats: {}, slug, name: slug };
+  }
+}
+
+
+/**
+ * Scrape a match detail page (pmatch.asp?...) for deeper analysis.
+ *
+ * ⚠ Only called for shortlisted matches — not on every refresh.
+ *
+ * The pmatch page contains:
+ *   - Head-to-head stats
+ *   - Recent form
+ *   - Goal timing distribution
+ *   - Performance analysis
+ *   - Various statistical breakdowns
+ *
+ * We extract whatever structured data we can find.
+ */
+async function scrapeMatchDetail(matchUrl) {
+  if (!matchUrl) return null;
+
+  console.log(`[match-detail] fetching ${matchUrl}`);
+
+  try {
+    const html = await fetchPage(matchUrl);
+    const $ = cheerio.load(html);
+
+    const detail = {
+      url: matchUrl,
+      title: $('title').text().trim(),
+      scrapedAt: new Date().toISOString(),
+      sections: {},
+    };
+
+    // Extract text blocks from major table sections
+    // SoccerSTATS uses table-based layout heavily
+    const sections = [];
+    $('table').each((_, table) => {
+      const text = $(table).text().trim();
+      // Look for keyword sections
+      if (text.includes('Head-to-Head') || text.includes('head to head')) {
+        detail.sections.h2h = text.substring(0, 2000);
+      }
+      if (text.includes('Over 2.5') || text.includes('over 2.5')) {
+        detail.sections.over25 = text.substring(0, 2000);
+      }
+      if (text.includes('Both teams') || text.includes('both teams') || text.includes('BTS')) {
+        detail.sections.btts = text.substring(0, 2000);
+      }
+      if (text.includes('Performance') || text.includes('performance')) {
+        detail.sections.performance = text.substring(0, 2000);
+      }
+      if (text.includes('Goal times') || text.includes('goal time')) {
+        detail.sections.goalTimes = text.substring(0, 1000);
+      }
+    });
+
+    // Try to extract specific stats via regex from the full page text
+    const pageText = $.text();
+
+    const h2hO25 = pageText.match(/head.*?over\s*2\.5.*?(\d+)\s*(?:of|\/)\s*(\d+)/i);
+    if (h2hO25) {
+      detail.h2hOver25 = { count: parseInt(h2hO25[1]), total: parseInt(h2hO25[2]) };
+    }
+
+    const h2hBtts = pageText.match(/head.*?both\s*teams?\s*scor.*?(\d+)\s*(?:of|\/)\s*(\d+)/i);
+    if (h2hBtts) {
+      detail.h2hBtts = { count: parseInt(h2hBtts[1]), total: parseInt(h2hBtts[2]) };
+    }
+
+    return detail;
+  } catch (err) {
+    console.warn(`[match-detail] failed: ${err.message}`);
+    return null;
+  }
+}
+
+
+module.exports = { scrapeMatchesPage, scrapeLeaguePage, scrapeMatchDetail };

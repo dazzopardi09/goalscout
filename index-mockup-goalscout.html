@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GoalScout — Match Analysis Mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#050b14;
+      --bg-2:#07111f;
+      --panel:#0a1424;
+      --panel-2:#0c1728;
+      --panel-3:#0d1a2d;
+      --line:rgba(166,195,255,.12);
+      --line-strong:rgba(166,195,255,.2);
+      --text:#edf4ff;
+      --muted:#9fb0cc;
+      --muted-2:#70829d;
+      --green:#79f2bf;
+      --green-2:#25c48d;
+      --amber:#ffca57;
+      --amber-2:#ffb020;
+      --cyan:#74d8ff;
+      --blue:#5aa7ff;
+      --violet:#b596ff;
+      --shadow:0 24px 80px rgba(0,0,0,.45);
+      --glow:radial-gradient(circle at 0% 0%, rgba(20,130,255,.18), transparent 28%), radial-gradient(circle at 100% 0%, rgba(39,190,136,.14), transparent 22%), linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0));
+    }
+
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:
+      radial-gradient(circle at top center, rgba(39,136,255,.11), transparent 28%),
+      radial-gradient(circle at bottom center, rgba(7,50,130,.28), transparent 30%),
+      linear-gradient(180deg, #030711 0%, #060d18 100%);
+      color:var(--text);
+      font-family:Inter,system-ui,sans-serif;
+    }
+    body{min-height:100vh}
+    .page{max-width:1340px;margin:0 auto;padding:32px 24px 60px}
+
+    .shell{
+      position:relative;
+      border:1px solid var(--line);
+      background:linear-gradient(180deg, rgba(11,22,39,.95), rgba(6,13,24,.98));
+      border-radius:32px;
+      overflow:hidden;
+      box-shadow:var(--shadow);
+      backdrop-filter:blur(14px);
+    }
+    .shell:before{
+      content:"";
+      position:absolute;inset:0;
+      background:var(--glow);
+      pointer-events:none;
+    }
+    .top-stripe{height:2px;background:linear-gradient(90deg, rgba(121,242,191,.95), rgba(91,167,255,.7), rgba(255,202,87,.9));opacity:.85}
+
+    .hero{padding:34px 40px 18px;border-bottom:1px solid var(--line)}
+    .teams{
+      display:grid;
+      grid-template-columns:1fr auto 1fr;
+      gap:24px;
+      align-items:center;
+    }
+    .team{display:flex;align-items:center;gap:18px;min-width:0}
+    .team.right{justify-content:flex-end;text-align:right}
+    .crest{
+      width:96px;height:96px;border-radius:24px;
+      border:1px solid var(--line-strong);
+      background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+      display:grid;place-items:center;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 10px 30px rgba(0,0,0,.28);
+      flex:0 0 auto;
+    }
+    .crest svg{width:68px;height:68px;opacity:.95}
+    .team-name{font-size:48px;line-height:.98;font-weight:800;letter-spacing:-.05em}
+    .team-sub{font-size:13px;color:var(--muted);margin-top:8px;letter-spacing:.18em;text-transform:uppercase}
+
+    .score-wrap{text-align:center;padding:0 12px}
+    .score{font-size:78px;line-height:.88;font-weight:800;letter-spacing:-.06em;white-space:nowrap}
+    .score span{color:#cfe6ff}
+    .meta{margin-top:12px;font-size:18px;color:#dbe7f8}
+    .meta-sub{margin-top:6px;color:var(--muted);font-size:15px}
+    .market-results{margin-top:18px;display:flex;justify-content:center;gap:14px;flex-wrap:wrap}
+    .market-pill{
+      min-width:180px;
+      padding:14px 18px;
+      border-radius:16px;
+      border:1px solid var(--line);
+      background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
+      font-size:16px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;text-align:center;
+    }
+    .market-pill.green{color:var(--green);box-shadow:inset 0 0 28px rgba(37,196,141,.07)}
+    .market-pill.amber{color:var(--amber);box-shadow:inset 0 0 28px rgba(255,176,32,.07)}
+
+    .section{padding:24px 40px 0}
+    .section:last-child{padding-bottom:40px}
+    .section-title{
+      display:flex;align-items:center;gap:12px;
+      font-size:16px;font-weight:800;letter-spacing:.01em;text-transform:none;
+      color:#eef5ff;margin:0 0 16px;
+    }
+    .section-title:before{
+      content:"";display:block;width:26px;height:2px;border-radius:999px;
+      background:linear-gradient(90deg, var(--green), var(--blue));
+    }
+    .section-title:after{
+      content:"";height:1px;flex:1;background:linear-gradient(90deg, rgba(166,195,255,.18), rgba(166,195,255,0));
+    }
+
+    .analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .card{
+      position:relative;
+      border:1px solid var(--line);
+      border-radius:22px;
+      background:linear-gradient(180deg, rgba(16,29,49,.88), rgba(10,20,35,.95));
+      overflow:hidden;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+    }
+    .card:before{
+      content:"";position:absolute;inset:0;pointer-events:none;
+      background:linear-gradient(180deg, rgba(255,255,255,.04), transparent 34%);
+    }
+    .analysis-card .card-head{padding:18px 20px 14px;font-size:18px;font-weight:800}
+    .analysis-card .card-body{padding:0 20px 20px}
+    .analysis-card.city-a{background:
+      linear-gradient(180deg, rgba(13,31,52,.92), rgba(9,20,37,.97)),
+      radial-gradient(circle at 20% 80%, rgba(5,145,180,.15), transparent 25%)}
+    .analysis-card.city-b{background:
+      linear-gradient(180deg, rgba(20,24,45,.92), rgba(12,18,35,.97)),
+      radial-gradient(circle at 80% 90%, rgba(255,176,32,.09), transparent 22%)}
+    .metric-row{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid rgba(166,195,255,.09)}
+    .metric-row:first-child{border-top:0}
+    .metric-label{color:#dfe9f9;font-size:14px}
+    .metric-value{font-size:15px;font-weight:800}
+    .metric-value.green{color:var(--green)}
+    .metric-value.amber{color:var(--amber)}
+    .confidence{
+      display:inline-flex;align-items:center;gap:10px;
+      margin-top:14px;padding:10px 14px;border-radius:12px;
+      font-weight:700;font-size:14px;border:1px solid rgba(255,255,255,.1)
+    }
+    .confidence.green{background:rgba(37,196,141,.12);color:#dffdf0;border-color:rgba(37,196,141,.25)}
+    .confidence.amber{background:rgba(255,176,32,.13);color:#ffe9b4;border-color:rgba(255,176,32,.26)}
+
+    .reasons-grid{display:grid;grid-template-columns:1.45fr .85fr;gap:18px}
+    .list-card{padding:20px 22px}
+    .list-card h3{margin:0 0 14px;font-size:18px;letter-spacing:-.02em}
+    .bullets{margin:0;padding-left:20px;color:#edf4ff}
+    .bullets li{margin:0 0 12px;color:#edf4ff;font-size:15px}
+    .bullets li::marker{color:var(--green)}
+    .risks li::marker{color:var(--amber)}
+    .risks li{color:#f2f6fd}
+
+    .insights-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+    .insight{
+      border:1px solid var(--line);
+      border-radius:18px;
+      padding:14px 14px 12px;
+      min-height:88px;
+      background:linear-gradient(180deg, rgba(13,24,40,.96), rgba(9,18,31,.94));
+    }
+    .insight .icon{font-size:20px;display:block;margin-bottom:10px}
+    .insight .label{font-size:14px;font-weight:700;margin-bottom:8px}
+    .insight .value{font-size:13px;color:#d7e2f4;line-height:1.35}
+    .insight.highlight{box-shadow:inset 0 0 26px rgba(37,196,141,.06)}
+
+    .recap-card{overflow:hidden}
+    .hero-media{
+      position:relative;height:340px;
+      background:
+        linear-gradient(180deg, rgba(8,18,32,.04), rgba(8,18,32,.22)),
+        linear-gradient(120deg, #1f3f74 0%, #294779 28%, #3f4d70 45%, #7a2d2d 63%, #b63f24 100%);
+    }
+    .hero-media:before{
+      content:"";position:absolute;inset:0;
+      background:
+        radial-gradient(circle at 20% 18%, rgba(255,255,255,.35), transparent 16%),
+        radial-gradient(circle at 76% 20%, rgba(255,255,255,.14), transparent 18%),
+        linear-gradient(180deg, transparent 42%, rgba(4,10,20,.55) 100%);
+      opacity:.75
+    }
+    .play{
+      position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+      width:120px;height:120px;border-radius:999px;border:2px solid rgba(255,255,255,.36);
+      background:rgba(13,19,32,.36);backdrop-filter:blur(8px);display:grid;place-items:center;
+      box-shadow:0 20px 40px rgba(0,0,0,.34)
+    }
+    .play:after{
+      content:"";display:block;border-left:28px solid white;border-top:17px solid transparent;border-bottom:17px solid transparent;margin-left:8px
+    }
+    .recap-copy{padding:22px 24px 24px}
+    .headline{font-size:32px;font-weight:800;line-height:1.05;letter-spacing:-.04em;max-width:840px}
+    .subcopy{margin-top:10px;color:var(--muted);font-size:15px;line-height:1.6;max-width:920px}
+    .cta-row{margin-top:18px;display:flex;gap:12px;flex-wrap:wrap}
+    .cta{
+      display:inline-flex;align-items:center;justify-content:center;gap:10px;
+      padding:13px 18px;border-radius:14px;text-decoration:none;font-weight:700;font-size:14px;
+      border:1px solid var(--line)
+    }
+    .cta.primary{background:linear-gradient(180deg, rgba(46,109,235,.9), rgba(32,86,194,.95));color:white;border-color:rgba(90,167,255,.34)}
+    .cta.secondary{background:rgba(255,255,255,.035);color:#edf4ff}
+
+    .bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .summary-card{padding:20px 22px}
+    .summary-card h3{margin:0 0 14px;font-size:18px}
+    .summary-row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid rgba(166,195,255,.09)}
+    .summary-row:first-of-type{border-top:0}
+    .summary-label{font-size:14px;color:#deebfd}
+    .summary-value{font-size:15px;font-weight:800}
+    .summary-value.green{color:var(--green)}
+    .summary-value.amber{color:var(--amber)}
+    .summary-value.blue{color:var(--cyan)}
+
+    .footer-note{padding:16px 40px 34px;color:var(--muted-2);font-size:12px}
+
+    @media (max-width: 1120px){
+      .team-name{font-size:34px}
+      .score{font-size:62px}
+      .insights-grid{grid-template-columns:repeat(3,1fr)}
+      .reasons-grid,.bottom-grid,.analysis-grid{grid-template-columns:1fr}
+    }
+
+    @media (max-width: 760px){
+      .page{padding:16px 12px 40px}
+      .hero,.section,.footer-note{padding-left:18px;padding-right:18px}
+      .teams{grid-template-columns:1fr;gap:20px}
+      .team,.team.right{justify-content:center;text-align:center;flex-direction:column}
+      .score-wrap{order:-1}
+      .score{font-size:54px}
+      .meta{font-size:16px}
+      .team-name{font-size:28px}
+      .insights-grid{grid-template-columns:1fr 1fr}
+      .hero-media{height:240px}
+      .headline{font-size:24px}
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <main class="shell">
+      <div class="top-stripe"></div>
+
+      <section class="hero">
+        <div class="teams">
+          <div class="team">
+            <div class="crest" aria-hidden="true">
+              <svg viewBox="0 0 100 100" fill="none">
+                <path d="M50 8L84 20V49C84 67 71 83 50 92C29 83 16 67 16 49V20L50 8Z" fill="#10346D" stroke="#DCE9FF" stroke-width="3"/>
+                <path d="M50 21L72 29V48C72 60 64 71 50 78C36 71 28 60 28 48V29L50 21Z" fill="#E7EEF8"/>
+                <path d="M32 54L50 69L68 54" stroke="#10346D" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div>
+              <div class="team-name">Melbourne Victory</div>
+              <div class="team-sub">Home</div>
+            </div>
+          </div>
+
+          <div class="score-wrap">
+            <div class="score"><span>2 - 2</span></div>
+            <div class="meta">A-League Men · Round 25</div>
+            <div class="meta-sub">17 Apr 2026</div>
+            <div class="market-results">
+              <div class="market-pill green">O2.5: Won</div>
+              <div class="market-pill amber">BTTS: Won</div>
+            </div>
+          </div>
+
+          <div class="team right">
+            <div>
+              <div class="team-name">Newcastle Jets</div>
+              <div class="team-sub">Away</div>
+            </div>
+            <div class="crest" aria-hidden="true">
+              <svg viewBox="0 0 100 100" fill="none">
+                <path d="M20 15H80V47C80 67 66 81 50 88C34 81 20 67 20 47V15Z" fill="#C83C2D" stroke="#FFD7A1" stroke-width="3"/>
+                <path d="M26 30H74V46C74 60 62 71 50 76C38 71 26 60 26 46V30Z" fill="#244A86"/>
+                <path d="M35 38L43 50L50 34L57 50L65 38" stroke="#FFD7A1" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Pre-Match Analysis</h2>
+        <div class="analysis-grid">
+          <article class="card analysis-card city-a">
+            <div class="card-head">Over 2.5 Goals</div>
+            <div class="card-body">
+              <div class="metric-row"><span class="metric-label">Model</span><span class="metric-value green">64%</span></div>
+              <div class="metric-row"><span class="metric-label">Fair Odds</span><span class="metric-value green">1.56</span></div>
+              <div class="metric-row"><span class="metric-label">Market Odds</span><span class="metric-value green">1.83</span></div>
+              <div class="metric-row"><span class="metric-label">Edge</span><span class="metric-value green">+17.3%</span></div>
+              <div class="confidence green">Confidence: High</div>
+            </div>
+          </article>
+
+          <article class="card analysis-card city-b">
+            <div class="card-head">Both Teams To Score</div>
+            <div class="card-body">
+              <div class="metric-row"><span class="metric-label">Model</span><span class="metric-value amber">61%</span></div>
+              <div class="metric-row"><span class="metric-label">Fair Odds</span><span class="metric-value amber">1.64</span></div>
+              <div class="metric-row"><span class="metric-label">Market Odds</span><span class="metric-value amber">1.91</span></div>
+              <div class="metric-row"><span class="metric-label">Edge</span><span class="metric-value amber">+16.5%</span></div>
+              <div class="confidence amber">Confidence: Medium-High</div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Why GoalScout Liked This Match</h2>
+        <div class="reasons-grid">
+          <article class="card list-card">
+            <h3>Primary Drivers</h3>
+            <ul class="bullets">
+              <li>Both teams generate high xG and sustain decent shot volume.</li>
+              <li>Defensive issues on both sides increase the chance of an open game.</li>
+              <li>Recent matches for both teams have produced plenty of chances.</li>
+              <li>Market odds were above the model fair line in both tracked markets.</li>
+            </ul>
+          </article>
+
+          <article class="card list-card">
+            <h3>Main Risks</h3>
+            <ul class="bullets risks">
+              <li>Slow opening spell could kill early tempo.</li>
+              <li>Key striker fitness doubts added some uncertainty.</li>
+              <li>Wet conditions could reduce chance quality.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Game Insights</h2>
+        <div class="insights-grid">
+          <div class="insight"><span class="icon">👥</span><div class="label">Lineups</div><div class="value">Expected first-choice front four available</div></div>
+          <div class="insight"><span class="icon">🏥</span><div class="label">Injury Report</div><div class="value">3 notable absences across both squads</div></div>
+          <div class="insight highlight"><span class="icon">📊</span><div class="label">Form &amp; xG</div><div class="value">1.8 vs 1.7 xG average in recent sample</div></div>
+          <div class="insight"><span class="icon">🗓️</span><div class="label">Rest Days</div><div class="value">Home: 5 days · Away: 1 day</div></div>
+          <div class="insight"><span class="icon">🌧️</span><div class="label">Weather</div><div class="value">Light rain forecast · 14°C</div></div>
+          <div class="insight highlight"><span class="icon">📉</span><div class="label">Odds Shift</div><div class="value">Opened 1.76 · closed 1.33 on best line</div></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Match Recap &amp; Highlights</h2>
+        <article class="card recap-card">
+          <div class="hero-media">
+            <div class="play" aria-hidden="true"></div>
+          </div>
+          <div class="recap-copy">
+            <div class="headline">Victory and Jets share spoils in a chaotic 2-2 draw</div>
+            <div class="subcopy">Newcastle struck first, Victory answered with two before halftime, then a late penalty dragged the match level again. The game stayed open enough throughout to justify the pre-match O2.5 and BTTS ratings.</div>
+            <div class="cta-row">
+              <a class="cta primary" href="#">Watch Highlights</a>
+              <a class="cta secondary" href="#">Read Full Recap</a>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="section">
+        <div class="bottom-grid">
+          <article class="card summary-card">
+            <h3>Expected vs Actual</h3>
+            <div class="summary-row"><span class="summary-label">Pre-match expectation</span><span class="summary-value green">High Scoring</span></div>
+            <div class="summary-row"><span class="summary-label">Final result</span><span class="summary-value blue">2 - 2</span></div>
+            <div class="summary-row"><span class="summary-label">Total goals</span><span class="summary-value">4</span></div>
+            <div class="summary-row"><span class="summary-label">Both teams scored</span><span class="summary-value green">Yes</span></div>
+            <div class="summary-row"><span class="summary-label">Verdict</span><span class="summary-value green">Model correct for the right reasons</span></div>
+          </article>
+
+          <article class="card summary-card">
+            <h3>Price Movement</h3>
+            <div class="summary-row"><span class="summary-label">Odds when tipped</span><span class="summary-value green">1.83</span></div>
+            <div class="summary-row"><span class="summary-label">Closing odds</span><span class="summary-value">1.75</span></div>
+            <div class="summary-row"><span class="summary-label">CLV</span><span class="summary-value green">+4.6%</span></div>
+            <div class="summary-row"><span class="summary-label">Beat the closing line</span><span class="summary-value green">Yes</span></div>
+            <div class="summary-row"><span class="summary-label">Automation readiness</span><span class="summary-value amber">Pre-match only</span></div>
+          </article>
+        </div>
+      </section>
+
+      <div class="footer-note">Mockup concept for GoalScout match pages. Built as a static HTML prototype so the layout can be ported into the live app later.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,25 @@
+services:
+  goalscout:
+    build: .
+    container_name: goalscout
+    ports:
+      - "3030:3030"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/app/data
+      - PORT=3030
+      - FLARESOLVERR_URL=http://192.168.178.5:8191/v1
+      - DISPLAY_TIMEZONE=Australia/Melbourne
+      - ODDS_API_KEYS=30d4b173a6bab1a9a6b9d0f8999ae00b,70b3804507b7a046ef41606d77b3bde3,63e840aa1320d8d28209bcaf848bad0d
+      - ODDS_REGIONS=au
+      - SOCCERSTATS_COOKIE=ASPSESSIONIDAGASBTAA=AFCKGEGAJCONMCJLJDOHLECB; steady-token=anZiWFBGaDBrbzNKRkQ4US83VkdVQT09; mmode=1; dmmode=1; tz=600
+    extra_hosts:
+      - "binhex-flaresolverr:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3030/api/status"]
+      interval: 60s
+      timeout: 5s
+      start_period: 30s
