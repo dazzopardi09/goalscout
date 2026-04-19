@@ -2,67 +2,59 @@
 // ─────────────────────────────────────────────────────────────
 // Integration with The-Odds-API (the-odds-api.com)
 //
-// Purpose:
-//   1. Discover which soccer leagues have active betting markets
-//   2. Fetch O2.5 and BTTS odds for shortlisted matches
-//   3. Filter shortlist to only "bettable" matches
+// Region: UK only (Bet365, Pinnacle, William Hill, Betfair Exchange etc)
+// Markets: totals (Over/Under 2.5) — both sides captured per event
 //
-// API docs: https://the-odds-api.com/liveapi/guides/v4/
+// ── Cache strategy ─────────────────────────────────────────
+//
+// Two-layer cache:
+//   1. In-memory: fast lookups during a single refresh cycle
+//   2. Disk (data/odds-cache.json): survives container restarts
+//
+// On startup, disk cache is loaded into memory if entries are
+// still within their TTL. A redeploy mid-cycle costs 0 extra
+// API calls as long as the data/ volume is mounted (it always is).
+//
+// Cache TTLs:
+//   Sports list:  6 hours (changes rarely)
+//   Odds per key: 3 hours (prices move slowly pre-match)
 //
 // ── Quota management ───────────────────────────────────────
-// ODDS_DAILY_LIMIT caps total API calls per UTC day.
-// Tracked in-memory; resets at UTC midnight or container restart.
+//
+// ODDS_DAILY_LIMIT caps calls per UTC day (resets at midnight).
+// Daily counter is in-memory only — resets on restart, which is
+// acceptable since a restart also resets our call pattern.
 //
 // ── In-play guard ──────────────────────────────────────────
-// Odds are NOT fetched or stored for matches within
-// INPLAY_BUFFER_MINS of kickoff (default 15 mins).
-// This prevents corrupt in-play prices (e.g. 8.00 mid-game)
-// from being stored as tip-time snapshots or skewing edge calcs.
 //
-// ── Bookmaker filtering ────────────────────────────────────
-// ODDS_BOOKMAKERS allowlist controls which books compete for
-// best price. Empty = all books eligible.
-//
-// ── Matching diagnostics ───────────────────────────────────
-// When a match fails to find odds, the actual Odds API event
-// names for that league are logged so you can identify the
-// correct name mapping and add it to KNOWN_NAME_OVERRIDES.
+// Events within INPLAY_BUFFER_MINS of kickoff are skipped.
+// Prevents corrupt in-game prices from being stored as
+// tip-time snapshots.
 // ─────────────────────────────────────────────────────────────
 
 const { fetch } = require('undici');
+const fs = require('fs');
+const path = require('path');
 const config = require('../config');
 
 let currentKeyIndex = 0;
 
 // ── In-play buffer ───────────────────────────────────────────
-// Don't use odds for matches within this many minutes of kickoff.
-// Prevents in-play garbage prices from corrupting tip-time data.
 const INPLAY_BUFFER_MINS = 15;
 
 function isInPlay(commenceTime) {
   if (!commenceTime) return false;
-  const kickoff = new Date(commenceTime);
-  const now = new Date();
-  const minsToKickoff = (kickoff - now) / 60000;
-  return minsToKickoff < INPLAY_BUFFER_MINS;
+  return (new Date(commenceTime) - new Date()) / 60000 < INPLAY_BUFFER_MINS;
 }
 
 // ── Known name overrides ─────────────────────────────────────
-// When The-Odds-API uses a completely different name to SoccerSTATS,
-// add the mapping here: SoccerSTATS name (lowercase) → Odds API name (lowercase).
-// Applied before normalisation during matching.
-// Populate from the "[odds-api] event names in" diagnostic log lines.
 const KNOWN_NAME_OVERRIDES = {
-  // Argentina — Odds API uses full official names
   'gimnasia':      'gimnasia la plata',
   'e. rio cuarto': 'atletico de rio cuarto',
 };
 
 // ── Daily quota tracking ─────────────────────────────────────
-const quotaTracker = {
-  date: null,
-  calls: 0,
-};
+const quotaTracker = { date: null, calls: 0 };
 
 function getTodayUTC() {
   return new Date().toISOString().slice(0, 10);
@@ -70,33 +62,90 @@ function getTodayUTC() {
 
 function incrementQuota() {
   const today = getTodayUTC();
-  if (quotaTracker.date !== today) {
-    quotaTracker.date = today;
-    quotaTracker.calls = 0;
-  }
+  if (quotaTracker.date !== today) { quotaTracker.date = today; quotaTracker.calls = 0; }
   quotaTracker.calls++;
 }
 
 function isQuotaExceeded() {
   const limit = config.ODDS_DAILY_LIMIT;
   if (!limit || limit <= 0) return false;
-  const today = getTodayUTC();
-  if (quotaTracker.date !== today) return false;
+  if (quotaTracker.date !== getTodayUTC()) return false;
   if (quotaTracker.calls >= limit) {
-    console.warn(`[odds-api] ⚠ Daily quota guard: ${quotaTracker.calls}/${limit} calls used today (UTC). Skipping request.`);
+    console.warn(`[odds-api] ⚠ Daily quota guard: ${quotaTracker.calls}/${limit} calls today. Skipping.`);
     return true;
   }
   return false;
 }
 
-// ── In-memory cache ──────────────────────────────────────────
+// ── Disk cache ───────────────────────────────────────────────
+// Persists the in-memory cache to data/odds-cache.json so that
+// container restarts don't burn quota re-fetching fresh data.
+
+const CACHE_FILE = path.join(config.DATA_DIR, 'odds-cache.json');
+
+const SPORTS_CACHE_TTL = 6 * 60 * 60 * 1000;  // 6 hours
+const ODDS_CACHE_TTL   = 3 * 60 * 60 * 1000;  // 3 hours
+
+// In-memory cache — loaded from disk on startup
 const cache = {
   sports: { data: null, timestamp: 0 },
-  odds: new Map(),
+  odds: new Map(),  // cacheKey → { data, timestamp }
 };
 
-const SPORTS_CACHE_TTL = 6 * 60 * 60 * 1000;
-const ODDS_CACHE_TTL   = 3 * 60 * 60 * 1000;
+/**
+ * Load disk cache into memory on startup.
+ * Only entries still within their TTL are kept.
+ */
+function loadDiskCache() {
+  try {
+    if (!fs.existsSync(CACHE_FILE)) return;
+    const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    const now = Date.now();
+
+    if (raw.sports && raw.sports.data && (now - raw.sports.timestamp) < SPORTS_CACHE_TTL) {
+      cache.sports = raw.sports;
+      console.log(`[odds-api] loaded sports cache from disk (${cache.sports.data.length} competitions, age ${Math.round((now - cache.sports.timestamp) / 60000)}min)`);
+    }
+
+    let oddsLoaded = 0;
+    for (const [key, entry] of Object.entries(raw.odds || {})) {
+      if ((now - entry.timestamp) < ODDS_CACHE_TTL) {
+        cache.odds.set(key, entry);
+        oddsLoaded++;
+      }
+    }
+    if (oddsLoaded > 0) {
+      console.log(`[odds-api] loaded ${oddsLoaded} odds entries from disk cache`);
+    }
+  } catch (err) {
+    console.warn(`[odds-api] could not load disk cache: ${err.message}`);
+  }
+}
+
+/**
+ * Persist current in-memory cache to disk.
+ * Called after every successful API fetch.
+ */
+function saveDiskCache() {
+  try {
+    if (!fs.existsSync(config.DATA_DIR)) {
+      fs.mkdirSync(config.DATA_DIR, { recursive: true });
+    }
+    const serialisable = {
+      savedAt: new Date().toISOString(),
+      sports: cache.sports,
+      odds: Object.fromEntries(cache.odds),
+    };
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(serialisable), 'utf8');
+  } catch (err) {
+    console.warn(`[odds-api] could not save disk cache: ${err.message}`);
+  }
+}
+
+// Load disk cache immediately on module load
+loadDiskCache();
+
+// ── Cache validity ───────────────────────────────────────────
 
 function isCacheValid(entry, ttl) {
   return entry && entry.data && (Date.now() - entry.timestamp) < ttl;
@@ -112,29 +161,18 @@ function getApiKey() {
   return key;
 }
 
-/**
- * Make a request to The-Odds-API.
- * Enforces daily quota guard before every live request.
- */
 async function oddsRequest(path, params = {}) {
   if (isQuotaExceeded()) return null;
 
   const key = getApiKey();
-  if (!key) {
-    console.warn('[odds-api] no API keys configured');
-    return null;
-  }
+  if (!key) { console.warn('[odds-api] no API keys configured'); return null; }
 
   const url = new URL(`https://api.the-odds-api.com${path}`);
   url.searchParams.set('apiKey', key);
-  for (const [k, v] of Object.entries(params)) {
-    url.searchParams.set(k, v);
-  }
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
 
   try {
-    const res = await fetch(url.toString(), {
-      signal: AbortSignal.timeout(15000),
-    });
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15000) });
 
     incrementQuota();
     const remaining = res.headers.get('x-requests-remaining');
@@ -155,12 +193,11 @@ async function oddsRequest(path, params = {}) {
   }
 }
 
-/**
- * Fetch all available soccer competitions with active markets.
- */
+// ── Sports list ──────────────────────────────────────────────
+
 async function fetchAvailableSports() {
   if (isCacheValid(cache.sports, SPORTS_CACHE_TTL)) {
-    console.log(`[odds-api] using cached sports list (${cache.sports.data.length} competitions)`);
+    console.log(`[odds-api] using cached sports list (${cache.sports.data.length} competitions, from ${cache.sports.data === null ? 'none' : 'cache'})`);
     return cache.sports.data;
   }
 
@@ -169,19 +206,20 @@ async function fetchAvailableSports() {
   if (!data) return cache.sports.data || [];
 
   const active = data.filter(s => s.active);
-  console.log(`[odds-api] ${active.length} active soccer competitions with markets`);
+  console.log(`[odds-api] ${active.length} active soccer competitions`);
   cache.sports = { data: active, timestamp: Date.now() };
+  saveDiskCache();
   return active;
 }
 
-/**
- * Fetch odds for a specific competition.
- */
+// ── League-level odds fetch ──────────────────────────────────
+
 async function fetchOddsForSport(sportKey, markets, regions) {
   const cacheKey = `${sportKey}|${markets}|${regions}`;
   const cached = cache.odds.get(cacheKey);
   if (isCacheValid(cached, ODDS_CACHE_TTL)) {
-    console.log(`[odds-api] using cached odds for ${sportKey} (${cached.data.length} events)`);
+    const ageMin = Math.round((Date.now() - cached.timestamp) / 60000);
+    console.log(`[odds-api] using cached odds for ${sportKey} (${cached.data.length} events, age ${ageMin}min)`);
     return cached.data;
   }
 
@@ -194,16 +232,33 @@ async function fetchOddsForSport(sportKey, markets, regions) {
 
   if (!data) return cached?.data || [];
   cache.odds.set(cacheKey, { data, timestamp: Date.now() });
+  saveDiskCache();
   return data;
 }
 
+// ── Event-level odds fetch ───────────────────────────────────
+
 /**
- * Build a mapping of bettable leagues.
+ * Fetch odds for a single event by Odds API event ID.
+ * Used by settler.js for pre-kickoff and closing snapshots.
+ * Costs 1 quota credit. Results are NOT cached (point-in-time).
  */
+async function fetchEventOdds(sportKey, eventId, markets, regions) {
+  if (!eventId) return null;
+  console.log(`[odds-api] fetching event odds for ${eventId}...`);
+  const data = await oddsRequest(`/v4/sports/${sportKey}/events/${eventId}/odds`, {
+    regions: regions || config.ODDS_REGIONS,
+    markets: markets || 'totals',
+    oddsFormat: 'decimal',
+  });
+  return data || null;
+}
+
+// ── Bettable league map ──────────────────────────────────────
+
 async function buildBettableLeagueMap() {
   const sports = await fetchAvailableSports();
   if (!sports || sports.length === 0) return new Map();
-
   const map = new Map();
   for (const s of sports) {
     map.set(s.key, { key: s.key, title: s.title, description: s.description || '' });
@@ -211,9 +266,8 @@ async function buildBettableLeagueMap() {
   return map;
 }
 
-/**
- * SoccerSTATS slug → Odds-API sport key mapping.
- */
+// ── Slug → Odds API key mapping ──────────────────────────────
+
 const SLUG_TO_ODDS_MAP = {
   'england':        'soccer_epl',
   'england2':       'soccer_england_efl_cup',
@@ -261,51 +315,33 @@ function getOddsKey(slug) {
   return SLUG_TO_ODDS_MAP[slug] || null;
 }
 
-/**
- * Normalise a team name for fuzzy matching.
- */
+// ── Name normalisation ───────────────────────────────────────
+
 function normalise(name) {
   return (name || '')
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/\butd\b/g, 'united')
-    .replace(/\bctiy\b/g, 'city')
-    .replace(/\bwed\b/g, 'wednesday')
     .replace(/\batl\b/g, 'atletico')
     .replace(/\bath\b/g, 'athletic')
     .replace(/\bborussia\b/g, 'borussia')
     .replace(/\bint\b/g, 'inter')
     .replace(/\bws\b/g, 'western sydney')
-    .replace(/\bfc\b/g, '')
-    .replace(/\bsc\b/g, '')
-    .replace(/\bsv\b/g, '')
-    .replace(/\bcf\b/g, '')
-    .replace(/\bac\b/g, '')
-    .replace(/\bas\b/g, '')
-    .replace(/\bsk\b/g, '')
-    .replace(/\bfk\b/g, '')
-    .replace(/\bif\b/g, '')
+    .replace(/\bfc\b/g, '').replace(/\bsc\b/g, '').replace(/\bsv\b/g, '')
+    .replace(/\bcf\b/g, '').replace(/\bac\b/g, '').replace(/\bas\b/g, '')
+    .replace(/\bsk\b/g, '').replace(/\bfk\b/g, '').replace(/\bif\b/g, '')
     .replace(/\bbk\b/g, '')
     .replace(/[^a-z0-9]/g, '')
     .trim();
 }
 
-/**
- * Apply known name overrides before normalising.
- * Catches cases where Odds API uses a completely different name.
- */
 function applyOverride(name) {
   const lower = (name || '').toLowerCase().trim();
   return KNOWN_NAME_OVERRIDES[lower] || name;
 }
 
-/**
- * Fetch odds for all shortlisted matches.
- *
- * In-play guard: skips any event within INPLAY_BUFFER_MINS of kickoff.
- * Diagnostic: logs Odds API event names for leagues where matches fail,
- *   so you can update KNOWN_NAME_OVERRIDES with the correct mapping.
- */
+// ── Main shortlist odds fetch ────────────────────────────────
+
 async function fetchOddsForShortlist(shortlistedMatches) {
   const byOddsKey = {};
   for (const m of shortlistedMatches) {
@@ -322,23 +358,20 @@ async function fetchOddsForShortlist(shortlistedMatches) {
     return new Map();
   }
 
-  console.log(`[odds-api] fetching odds for ${oddsKeys.length} competitions...`);
+  console.log(`[odds-api] fetching odds for ${oddsKeys.length} competitions (UK region)...`);
 
   const allOddsData = new Map();
-  const leagueEventNames = new Map(); // sportKey → ["Home vs Away", ...]
-  const allowedBookmakers = config.ODDS_BOOKMAKERS;
+  const leagueEventNames = new Map();
+  const allowedBookmakers = config.ODDS_BOOKMAKERS || [];
 
   for (const sportKey of oddsKeys) {
     try {
-      const data = await fetchOddsForSport(sportKey, 'h2h,totals', config.ODDS_REGIONS);
+      const data = await fetchOddsForSport(sportKey, 'totals', config.ODDS_REGIONS);
       if (!data || !Array.isArray(data)) continue;
 
       const eventNamesInLeague = [];
 
       for (const event of data) {
-        // ── In-play guard ────────────────────────────────
-        // Skip events that have started or kick off within INPLAY_BUFFER_MINS.
-        // Prevents in-game odds from corrupting tip-time snapshots.
         if (isInPlay(event.commence_time)) {
           console.log(`[odds-api] skipping in-play/imminent: ${event.home_team} vs ${event.away_team}`);
           continue;
@@ -351,50 +384,32 @@ async function fetchOddsForShortlist(shortlistedMatches) {
         eventNamesInLeague.push(`${event.home_team} vs ${event.away_team}`);
 
         const odds = {
+          eventId: event.id,
           homeTeam: event.home_team,
           awayTeam: event.away_team,
           commenceTime: event.commence_time,
-          h2h: null,
           o25: null,
+          u25: null,
         };
 
-        let bestO25Over = null;
-        let bestH2hHome = null;
+        let bestOver  = null;
+        let bestUnder = null;
 
         for (const bm of (event.bookmakers || [])) {
           if (allowedBookmakers.length > 0 && !allowedBookmakers.includes(bm.key.toLowerCase())) {
             continue;
           }
-
           for (const mkt of (bm.markets || [])) {
-            if (mkt.key === 'totals') {
-              const over = (mkt.outcomes || []).find(o =>
-                o.name === 'Over' && o.point === 2.5
-              );
-              if (over && (!bestO25Over || over.price > bestO25Over.price)) {
-                bestO25Over = {
-                  price: over.price,
-                  bookmaker: bm.title,
-                  bookmakerKey: bm.key,
-                };
-              }
-            }
-
-            if (mkt.key === 'h2h') {
-              const home = (mkt.outcomes || []).find(o => o.name === event.home_team);
-              if (home && (!bestH2hHome || home.price > bestH2hHome.price)) {
-                bestH2hHome = {
-                  price: home.price,
-                  bookmaker: bm.title,
-                  bookmakerKey: bm.key,
-                };
-              }
-            }
+            if (mkt.key !== 'totals') continue;
+            const over  = (mkt.outcomes || []).find(o => o.name === 'Over'  && o.point === 2.5);
+            const under = (mkt.outcomes || []).find(o => o.name === 'Under' && o.point === 2.5);
+            if (over  && (!bestOver  || over.price  > bestOver.price))  bestOver  = { price: over.price,  bookmaker: bm.title, bookmakerKey: bm.key };
+            if (under && (!bestUnder || under.price > bestUnder.price)) bestUnder = { price: under.price, bookmaker: bm.title, bookmakerKey: bm.key };
           }
         }
 
-        odds.o25 = bestO25Over;
-        odds.h2h = bestH2hHome;
+        odds.o25 = bestOver;
+        odds.u25 = bestUnder;
         allOddsData.set(eventKey, odds);
       }
 
@@ -405,10 +420,7 @@ async function fetchOddsForShortlist(shortlistedMatches) {
     }
   }
 
-  // ── Matching diagnostic ─────────────────────────────────
-  // Pre-check which shortlisted matches will fail, and log the
-  // actual Odds API names for that league so KNOWN_NAME_OVERRIDES
-  // can be updated with the correct mapping.
+  // Matching diagnostics — only for pre-kickoff matches
   for (const m of shortlistedMatches) {
     const sportKey = m.oddsKey || getOddsKey(m.leagueSlug);
     if (!sportKey) continue;
@@ -429,13 +441,8 @@ async function fetchOddsForShortlist(shortlistedMatches) {
     }
 
     if (!willMatch) {
-      // Suppress noise for matches that have already kicked off —
-      // the Odds API removes completed events from /odds, so a no-match
-      // for a past fixture is expected and not actionable.
       const kickoff = m.commenceTime || (m.odds && m.odds.commenceTime) || null;
-      const alreadyStarted = kickoff && new Date(kickoff) < new Date();
-      if (alreadyStarted) continue;
-
+      if (kickoff && new Date(kickoff) < new Date()) continue;
       const names = leagueEventNames.get(sportKey) || [];
       console.log(`[odds-api] no match for "${m.homeTeam}" vs "${m.awayTeam}" (${m.leagueSlug})`);
       if (names.length > 0) {
@@ -450,19 +457,15 @@ async function fetchOddsForShortlist(shortlistedMatches) {
   return allOddsData;
 }
 
-/**
- * Try to match a shortlisted match to odds data.
- * Applies KNOWN_NAME_OVERRIDES before normalising.
- */
+// ── Match → odds lookup ──────────────────────────────────────
+
 function matchOddsToMatch(match, oddsMap) {
   const homeNorm = normalise(applyOverride(match.homeTeam));
   const awayNorm = normalise(applyOverride(match.awayTeam));
 
-  // Strategy 1: Exact normalised key
   const exactKey = `${homeNorm}__${awayNorm}`;
   if (oddsMap.has(exactKey)) return oddsMap.get(exactKey);
 
-  // Strategy 2: Partial/substring match
   for (const [key, odds] of oddsMap) {
     const [oh, oa] = key.split('__');
     if ((oh.includes(homeNorm) || homeNorm.includes(oh)) &&
@@ -471,15 +474,12 @@ function matchOddsToMatch(match, oddsMap) {
     }
   }
 
-  // Strategy 3: First-6-chars prefix match
-  const homeFirst = homeNorm.substring(0, Math.min(homeNorm.length, 6));
-  const awayFirst = awayNorm.substring(0, Math.min(awayNorm.length, 6));
-  if (homeFirst.length >= 4 && awayFirst.length >= 4) {
+  const hf = homeNorm.substring(0, 6);
+  const af = awayNorm.substring(0, 6);
+  if (hf.length >= 4 && af.length >= 4) {
     for (const [key, odds] of oddsMap) {
       const [oh, oa] = key.split('__');
-      if (oh.startsWith(homeFirst) && oa.startsWith(awayFirst)) {
-        return odds;
-      }
+      if (oh.startsWith(hf) && oa.startsWith(af)) return odds;
     }
   }
 
@@ -489,6 +489,7 @@ function matchOddsToMatch(match, oddsMap) {
 module.exports = {
   fetchAvailableSports,
   fetchOddsForSport,
+  fetchEventOdds,
   buildBettableLeagueMap,
   isBettableLeague,
   getOddsKey,

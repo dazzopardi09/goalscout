@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#070d16;--panel:#08101b;--panel-2:#0b1220;--panel-3:#0f1828;--text:#e5edf8;--muted:#8b9ab0;--muted-2:#66758c;--line:rgba(255,255,255,0.08);--green:#6ee7b7;--green-2:#34d399;--lime:#bef264;--amber:#fbbf24;--red:#f87171;--cyan:#67e8f9;--violet:#c4b5fd;--blue:#7dd3fc}
+:root{--bg:#070d16;--panel:#08101b;--panel-2:#0b1220;--panel-3:#0f1828;--text:#e5edf8;--muted:#8b9ab0;--muted-2:#66758c;--line:rgba(255,255,255,0.08);--green:#6ee7b7;--green-2:#34d399;--lime:#bef264;--amber:#fbbf24;--red:#f87171;--cyan:#67e8f9;--violet:#c4b5fd;--blue:#7dd3fc;--indigo:#818cf8}
 *{box-sizing:border-box;margin:0;padding:0}body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}.app{max-width:1720px;margin:0 auto;padding:20px 20px 40px}
 .hero{border:1px solid var(--line);border-radius:28px;padding:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.12),transparent 22%),radial-gradient(circle at top right,rgba(59,130,246,.12),transparent 24%),linear-gradient(180deg,#0b1322,#09101c);box-shadow:0 20px 60px rgba(0,0,0,.35)}
 .hero-inner{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap}
@@ -27,20 +27,28 @@
 .filter-chip{border:1px solid var(--line);background:rgba(255,255,255,.03);color:#cbd5e1;padding:10px 12px;border-radius:12px;font-size:14px;cursor:pointer;font-family:inherit}.filter-chip.active{border-color:rgba(52,211,153,.3);background:rgba(16,185,129,.15);color:#bbf7d0}.filter-chip:hover{border-color:rgba(255,255,255,.15)}
 .league-select{min-width:260px;border:1px solid var(--line);background:var(--panel-3);color:#cbd5e1;padding:14px 16px;border-radius:16px;font-size:14px;font-family:inherit}
 .table-shell{margin-top:16px;overflow-x:auto;border-radius:30px;border:1px solid var(--line);background:var(--panel);box-shadow:0 24px 80px rgba(0,0,0,.32);position:relative}
-table{width:100%;border-collapse:collapse;min-width:1600px}
+table{width:100%;border-collapse:collapse;min-width:1500px}
 thead th{padding:16px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted-2);text-align:left;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel);z-index:10;white-space:nowrap}thead th:hover{color:var(--muted)}thead th.sorted-asc::after{content:' ▲';color:var(--green)}thead th.sorted-desc::after{content:' ▼';color:var(--green)}
 tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s}tbody tr:hover{background:rgba(255,255,255,.02)}td{padding:14px 10px;vertical-align:middle}
 .badge{display:inline-flex;align-items:center;justify-content:center;min-width:50px;padding:8px 12px;border-radius:12px;font-size:14px;font-weight:700}
 .grade-aplus{border:1px solid rgba(74,222,128,.3);background:rgba(16,185,129,.15);color:#6ee7b7}.grade-a{border:1px solid rgba(190,242,100,.3);background:rgba(132,204,22,.14);color:#bef264}.grade-b{border:1px solid rgba(251,191,36,.3);background:rgba(245,158,11,.15);color:#fcd34d}.grade-c{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#94a3b8}
+/* Direction badges */
+.dir-badge{display:inline-flex;align-items:center;padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.dir-o25{border:1px solid rgba(110,231,183,.3);background:rgba(16,185,129,.12);color:#6ee7b7}
+.dir-u25{border:1px solid rgba(129,140,248,.3);background:rgba(99,102,241,.12);color:#818cf8}
 .prob-big{font-size:22px;font-weight:700;letter-spacing:-.02em}.prob-sub{font-size:11px;color:var(--muted-2);margin-top:2px}
 .ko-cell{font-size:13px;color:#cbd5e1;line-height:1.4}.ko-date{font-size:11px;color:var(--muted-2)}
 .league-code span{display:inline-block;border:1px solid var(--line);background:rgba(255,255,255,.03);padding:6px 10px;border-radius:10px;font-size:11px;color:#cbd5e1;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .match-title{font-size:14px;font-weight:600;letter-spacing:-.01em;color:#f8fafc}
 .signal{border:1px solid rgba(103,232,249,.10);background:rgba(6,182,212,.05);border-radius:14px;padding:8px 10px;min-width:110px}.signal-label{font-size:10px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted-2)}.signal-value{margin-top:3px;font-size:15px;font-weight:700;letter-spacing:-.02em}.signal-value span{color:var(--muted-2);font-weight:500}
 .pct-hot{color:var(--green)}.pct-warm{color:var(--amber)}.pct-cold{color:var(--muted)}
+/* U2.5 signal — uses indigo tint */
+.signal-u25{border:1px solid rgba(129,140,248,.15);background:rgba(99,102,241,.06);border-radius:14px;padding:8px 10px;min-width:110px}
 .odds-cell{min-width:120px}.odds-box{border:1px solid rgba(196,181,253,.2);background:rgba(139,92,246,.08);border-radius:14px;padding:8px 10px;display:block}.odds-price{font-size:18px;font-weight:700;color:var(--violet)}.odds-bookie{font-size:10px;color:var(--muted-2);margin-top:2px;text-transform:uppercase;letter-spacing:.1em}.odds-none{color:var(--muted-2);font-size:12px;font-style:italic}
+/* Under odds box — indigo tint */
+.odds-box-u25{border:1px solid rgba(129,140,248,.25);background:rgba(99,102,241,.10);border-radius:14px;padding:8px 10px;display:block}.odds-price-u25{font-size:18px;font-weight:700;color:var(--indigo)}.odds-bookie-u25{font-size:10px;color:var(--muted-2);margin-top:2px;text-transform:uppercase;letter-spacing:.1em}
 .edge-box{border:1px solid rgba(103,232,249,.15);background:rgba(6,182,212,.06);border-radius:14px;padding:8px 10px;min-width:100px}.edge-val{font-size:16px;font-weight:700;margin-top:2px}.edge-label{font-size:10px;color:var(--muted-2);text-transform:uppercase;letter-spacing:.15em}
-.flags{display:flex;flex-wrap:wrap;gap:5px;max-width:300px}.flag{border:1px solid rgba(74,222,128,.2);background:rgba(16,185,129,.10);color:#d1fae5;border-radius:999px;padding:4px 9px;font-size:11px;cursor:default}.flag.warn{border-color:rgba(248,113,113,.2);background:rgba(239,68,68,.10);color:#fecaca}.flag.hot{border-color:rgba(74,222,128,.35);background:rgba(16,185,129,.2);color:#a7f3d0}
+.flags{display:flex;flex-wrap:wrap;gap:5px;max-width:300px}.flag{border:1px solid rgba(74,222,128,.2);background:rgba(16,185,129,.10);color:#d1fae5;border-radius:999px;padding:4px 9px;font-size:11px;cursor:default}.flag.warn{border-color:rgba(248,113,113,.2);background:rgba(239,68,68,.10);color:#fecaca}.flag.hot{border-color:rgba(74,222,128,.35);background:rgba(16,185,129,.2);color:#a7f3d0}.flag.lock{border-color:rgba(129,140,248,.3);background:rgba(99,102,241,.12);color:#a5b4fc}
 .actions{display:flex;gap:6px}.action{border:1px solid var(--line);background:rgba(255,255,255,.04);color:#ddd6fe;border-radius:10px;padding:7px 10px;font-size:12px;text-decoration:none}.action:hover{border-color:rgba(255,255,255,.15);color:#f8fafc}
 .empty-state{text-align:center;padding:4rem 2rem;color:var(--muted)}.empty-state h2{font-size:16px;color:var(--text);margin-bottom:8px}
 .footer{margin-top:16px;border-top:1px solid var(--line);padding:16px 0;display:flex;justify-content:space-between;font-size:12px;color:var(--muted-2);flex-wrap:wrap;gap:8px}.footer a{color:var(--violet);text-decoration:none}
@@ -49,19 +57,18 @@ tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s
 .perf-market-panel{border:1px solid var(--line);border-radius:22px;background:var(--panel);padding:20px}
 .perf-card{border:1px solid var(--line);border-radius:16px;padding:16px 18px;background:var(--panel-2)}.perf-card-label{font-size:11px;text-transform:uppercase;letter-spacing:.2em;color:var(--muted-2)}.perf-card-value{font-size:28px;font-weight:700;letter-spacing:-.03em;margin-top:8px}.perf-card-sub{font-size:11px;color:var(--muted-2);margin-top:3px}
 .perf-row{display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:13px}.perf-row:first-of-type{border-top:0}.perf-row-label{color:var(--muted)}.perf-row-val{font-weight:700}
-/* Market tabs for performance table */
-.market-tabs{display:flex;gap:8px;padding:16px 20px 0;border-bottom:1px solid var(--line);margin-bottom:0}
+.market-tabs{display:flex;gap:8px;padding:16px 20px 0;border-bottom:1px solid var(--line)}
 .market-tab{border:none;background:none;color:var(--muted-2);font-size:13px;font-weight:600;padding:8px 16px 12px;cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s}
 .market-tab.active{color:var(--green);border-bottom-color:var(--green)}
-.market-tab:hover:not(.active){color:var(--text)}
-@media(max-width:768px){.stats{grid-template-columns:1fr};#perfContent>div:nth-child(2){grid-template-columns:1fr}}
+.market-tab.active-u25{color:var(--indigo);border-bottom-color:var(--indigo)}
+.market-tab:hover:not(.active):not(.active-u25){color:var(--text)}
+@media(max-width:768px){.stats{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="app">
-<section class="hero"><div class="hero-inner"><div><div class="brand"><h1>GoalScout<span>.v2</span></h1><span class="pill">bettable · pricing engine</span></div><p>Bettable-first probability engine. Estimates P(O2.5) and P(BTTS), calculates fair odds, and identifies edge vs market price.</p></div><div class="hero-right"><div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Loading...</span></div><button class="btn" id="refreshBtn" onclick="triggerRefresh()">↻ Refresh</button></div></div></section>
+<section class="hero"><div class="hero-inner"><div><div class="brand"><h1>GoalScout<span>.v2</span></h1><span class="pill">bettable · pricing engine</span></div><p>Directional probability engine. Rates each match as Over 2.5 or Under 2.5, calculates fair odds, and identifies edge vs market price.</p></div><div class="hero-right"><div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Loading...</span></div><button class="btn" id="refreshBtn" onclick="triggerRefresh()">↻ Refresh</button></div></div></section>
 <div class="loading-bar" id="loadingBar"></div>
-<!-- Tab nav -->
 <div style="display:flex;gap:8px;margin-top:14px;margin-bottom:-8px">
   <button class="tab-btn active" id="tabShortlist" onclick="switchTab('shortlist')">📋 Shortlist</button>
   <button class="tab-btn" id="tabPerf" onclick="switchTab('perf')">📊 Performance</button>
@@ -71,47 +78,47 @@ tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s
 <div class="stat tone-amber"><div class="stat-label">Shortlisted Matches</div><div class="stat-value" style="color:var(--amber)" id="statShortlisted">—</div></div>
 <div class="stat tone-blue"><div class="stat-label">Last Updated (AEST)</div><div class="stat-value" style="font-size:20px;color:var(--blue)" id="statUpdated">—</div></div>
 </section>
-<section class="filters" id="filtersSection"><div class="filters-inner"><div class="filter-row"><div class="filter-group"><span class="filter-label">Grade</span><button class="filter-chip active" data-group="grade" data-val="all">All</button><button class="filter-chip" data-group="grade" data-val="A+">A+</button><button class="filter-chip" data-group="grade" data-val="A">A</button><button class="filter-chip" data-group="grade" data-val="B">B</button></div><div class="filter-group"><span class="filter-label">Focus</span><button class="filter-chip active" data-group="focus" data-val="all">All</button><button class="filter-chip" data-group="focus" data-val="o25">O2.5</button><button class="filter-chip" data-group="focus" data-val="btts">BTTS</button></div></div><div class="filter-group"><span class="filter-label">League</span><select class="league-select" id="leagueFilter" onchange="applyFilters()"><option value="all">All leagues</option></select></div></div></section>
+<section class="filters" id="filtersSection"><div class="filters-inner"><div class="filter-row"><div class="filter-group"><span class="filter-label">Grade</span><button class="filter-chip active" data-group="grade" data-val="all">All</button><button class="filter-chip" data-group="grade" data-val="A+">A+</button><button class="filter-chip" data-group="grade" data-val="A">A</button><button class="filter-chip" data-group="grade" data-val="B">B</button></div><div class="filter-group"><span class="filter-label">Direction</span><button class="filter-chip active" data-group="direction" data-val="all">All</button><button class="filter-chip" data-group="direction" data-val="o25">O2.5</button><button class="filter-chip" data-group="direction" data-val="u25">U2.5</button></div></div><div class="filter-group"><span class="filter-label">League</span><select class="league-select" id="leagueFilter" onchange="applyFilters()"><option value="all">All leagues</option></select></div></div></section>
 <section class="table-shell" id="tableShellSection"><table><thead><tr>
-<th data-sort="prob"><span class="tip">Probability<span class="tip-text">Model estimated chance of Over 2.5 goals based on both teams home/away scoring records. Higher = more likely to see 3+ goals.</span></span></th>
-<th data-sort="grade"><span class="tip">Grade<span class="tip-text">Investigation priority based on number and strength of positive indicators. A+ = strongest, B = worth a look.</span></span></th>
-<th data-sort="kickoff"><span class="tip">Kickoff<span class="tip-text">Match kickoff time in AEST. Uses Odds API time (UTC converted) when available.</span></span></th>
+<th data-sort="prob"><span class="tip">Probability<span class="tip-text">Model probability for the flagged direction. For O2.5 matches: chance of 3+ goals. For U2.5 matches: chance of 2 or fewer goals.</span></span></th>
+<th data-sort="grade">Grade</th>
+<th><span class="tip">Call<span class="tip-text">The model's directional recommendation for this match. O2.5 = expect 3+ goals. U2.5 = expect 2 or fewer. A match can only be one or the other.</span></span></th>
+<th data-sort="kickoff">Kickoff</th>
 <th data-sort="league">League</th>
 <th data-sort="match">Match</th>
-<th>O2.5</th>
-<th>BTTS</th>
-<th><span class="tip">Best Odds<span class="tip-text">Best available Over 2.5 decimal odds from AU bookmakers.</span></span></th>
-<th data-sort="edge"><span class="tip">Edge<span class="tip-text">How much the bookie price exceeds the models fair price. Green = potential value. Red = overpriced.</span></span></th>
-<th><span class="tip">Why<span class="tip-text">Key reasons this match was flagged.</span></span></th>
+<th><span class="tip">O2.5 Stats<span class="tip-text">Home / Away O2.5% from their home/away games. High = team often in high-scoring matches.</span></span></th>
+<th><span class="tip">U2.5 Stats<span class="tip-text">Home / Away CS% and FTS%. High CS% = defensive. High FTS% = often fails to score. Both suggest a low-scoring match.</span></span></th>
+<th><span class="tip">Best Odds<span class="tip-text">Best available price for the flagged direction (O2.5 or U2.5) from UK bookmakers. Pinnacle shown where available.</span></span></th>
+<th data-sort="edge"><span class="tip">Edge<span class="tip-text">How much the market price exceeds the model's fair price for the flagged direction. Positive = potential value.</span></span></th>
+<th>Flags</th>
 <th>Links</th>
 </tr></thead><tbody id="tableBody"></tbody></table></section>
 <div class="empty-state" id="emptyState" style="display:none"><h2>No matches shortlisted</h2><p>No bettable matches meet the threshold.</p></div>
-<!-- ── Performance tab ─────────────────────────────────────── -->
+
+<!-- Performance tab -->
 <div id="perfPanel" style="display:none;margin-top:16px">
   <div id="perfLoading" style="text-align:center;padding:2rem;color:var(--muted);font-size:14px">Loading performance data...</div>
   <div id="perfContent" style="display:none">
-    <!-- Summary cards -->
     <div id="perfSummaryCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px"></div>
-    <!-- Market panels -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
       <div id="perfO25Panel" class="perf-market-panel"></div>
-      <div id="perfBttsPanel" class="perf-market-panel"></div>
+      <div id="perfU25Panel" class="perf-market-panel"></div>
     </div>
-    <!-- Recent settled table with O2.5 / BTTS tabs -->
     <div class="table-shell" style="margin-top:0">
-      <!-- Market tab bar -->
       <div class="market-tabs">
         <button class="market-tab active" id="perfTabO25" onclick="switchPerfMarketTab('over_2.5')">Over 2.5 Goals</button>
-        <button class="market-tab" id="perfTabBtts" onclick="switchPerfMarketTab('btts')">Both Teams To Score</button>
+        <button class="market-tab" id="perfTabU25" onclick="switchPerfMarketTab('under_2.5')">Under 2.5 Goals</button>
       </div>
       <div style="padding:12px 20px;font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted-2);border-bottom:1px solid var(--line)" id="perfTableLabel">Recent Settled — Over 2.5</div>
-      <div style="overflow-x:auto"><table id="perfTable" style="min-width:900px"><thead><tr>
+      <div style="overflow-x:auto"><table id="perfTable" style="min-width:980px"><thead><tr>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:left;border-bottom:1px solid var(--line)">Date</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:left;border-bottom:1px solid var(--line)">Match</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Model %</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Fair</th>
-        <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Mkt Odds</th>
+        <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Tip Odds</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Edge</th>
+        <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Pre-KO</th>
+        <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Move%</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">Close</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:right;border-bottom:1px solid var(--line)">CLV%</th>
         <th style="padding:12px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted-2);text-align:center;border-bottom:1px solid var(--line)">Score</th>
@@ -119,7 +126,7 @@ tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s
       </tr></thead><tbody id="perfTableBody"></tbody></table></div>
     </div>
     <div style="margin-top:10px;font-size:11px;color:var(--muted-2);padding:0 4px">
-      CLV% = how much your entry beat the closing line. Positive = market moved your way. Brier score lower is better (0 = perfect, 0.25 = coin flip). Needs 30+ settled predictions to be meaningful.
+      Move% = price movement from tip-time to pre-kickoff. Positive = odds shortened (market agrees). CLV% = tip-time vs closing line. Brier lower is better (0.25 = coin flip). Meaningful at 30+ settled predictions.
     </div>
   </div>
 </div>
@@ -127,185 +134,222 @@ tbody tr{border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s
 <div class="footer"><span>Data: <a href="https://www.soccerstats.com" target="_blank">SoccerSTATS</a> · Odds: <a href="https://the-odds-api.com" target="_blank">The-Odds-API</a> · Not betting advice.</span><span>GoalScout v2 · Melbourne AEST</span></div>
 </div>
 <script>
-let shortlistData=[],currentSort={key:'prob',dir:'desc'},filters={grade:'all',focus:'all',league:'all'};
-let perfData=null, activePerfMarket='over_2.5';
+let shortlistData=[],currentSort={key:'prob',dir:'desc'},filters={grade:'all',direction:'all',league:'all'};
+let perfData=null,activePerfMarket='over_2.5';
 
 function pctClass(v){if(v==null)return'pct-cold';if(v>=65)return'pct-hot';if(v>=50)return'pct-warm';return'pct-cold'}
 function gradeClass(g){return g==='A+'?'grade-aplus':g==='A'?'grade-a':g==='B'?'grade-b':'grade-c'}
-function flagClass(f){return f.startsWith('\u{1F525}')?'hot':f.startsWith('\u26A0')?'warn':''}
-function fmtPct(v){return v==null?'\u2014':v+'%'}
-function humanFlag(f){return f.replace(/^\u{1F525}\s*/u,'').replace(/^\u{1F4C8}\s*/u,'').replace(/^\u26A0\s*/,'').replace(/^Home O2\.5 (\d+)%$/,'Home: $1% games 3+ goals').replace(/^Away O2\.5 (\d+)%$/,'Away: $1% games 3+ goals').replace(/^Home BTTS (\d+)%$/,'Home: both score $1%').replace(/^Away BTTS (\d+)%$/,'Away: both score $1%').replace(/^Home FTS (\d+)%.*$/,'\u26A0 Home blanks $1%').replace(/^Away FTS (\d+)%.*$/,'\u26A0 Away blanks $1%').replace(/^Home CS (\d+)%.*$/,'\u26A0 Home clean sheet $1%').replace(/^Away CS (\d+)%.*$/,'\u26A0 Away clean sheet $1%').replace(/^Combined TG (.+)$/,'Avg $1 goals combined').replace(/^PPG mismatch.*$/,'Strength mismatch')}
-function fmtKickoff(m){if(m.odds&&m.odds.commenceTime){var d=new Date(m.odds.commenceTime);return d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Australia/Melbourne'})}if(!m.kickoff)return'\u2014';var p=m.kickoff.split(':').map(Number);var h=p[0]-1;if(h<0)h=23;return String(h).padStart(2,'0')+':'+String(p[1]).padStart(2,'0')}
+function flagClass(f){
+  if(f.startsWith('🔥')||f.startsWith('📈'))return'hot';
+  if(f.startsWith('⚠'))return'warn';
+  if(f.startsWith('🔒'))return'lock';
+  return'';
+}
+function fmtPct(v){return v==null?'—':v+'%'}
+function fmtKickoff(m){if(m.odds&&m.odds.commenceTime){var d=new Date(m.odds.commenceTime);return d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Australia/Melbourne'})}if(!m.kickoff)return'—';var p=m.kickoff.split(':').map(Number);var h=p[0]-1;if(h<0)h=23;return String(h).padStart(2,'0')+':'+String(p[1]).padStart(2,'0')}
 function fmtDate(m){if(m.odds&&m.odds.commenceTime){var d=new Date(m.odds.commenceTime);return d.toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short',timeZone:'Australia/Melbourne'})}return m.day||''}
 function sortKey(m){if(m.odds&&m.odds.commenceTime)return m.odds.commenceTime;return m.kickoff||''}
-async function loadStatus(){try{var r=await fetch('/api/status');var d=await r.json();document.getElementById('statusDot').className='dot '+(d.status==='running'?'running':d.status==='error'?'error':'');if(d.status==='running'){document.getElementById('statusText').textContent=d.progress||'Refreshing...';document.getElementById('loadingBar').classList.add('active');document.getElementById('refreshBtn').disabled=true}else{document.getElementById('statusText').textContent=d.lastRefresh?'Last: '+new Date(d.lastRefresh).toLocaleTimeString('en-AU',{timeZone:'Australia/Melbourne'}):(d.lastError||'Ready');document.getElementById('loadingBar').classList.remove('active');document.getElementById('refreshBtn').disabled=false}if(d.meta){document.getElementById('statShortlisted').textContent=d.meta.shortlistCount||'\u2014';if(d.meta.lastRefresh){var dt=new Date(d.meta.lastRefresh);document.getElementById('statUpdated').textContent=dt.toLocaleDateString('en-AU',{day:'2-digit',month:'short',timeZone:'Australia/Melbourne'})+' \u00b7 '+dt.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',timeZone:'Australia/Melbourne'})}}return d.status}catch(e){return'error'}}
+
+async function loadStatus(){try{var r=await fetch('/api/status');var d=await r.json();document.getElementById('statusDot').className='dot '+(d.status==='running'?'running':d.status==='error'?'error':'');if(d.status==='running'){document.getElementById('statusText').textContent=d.progress||'Refreshing...';document.getElementById('loadingBar').classList.add('active');document.getElementById('refreshBtn').disabled=true}else{document.getElementById('statusText').textContent=d.lastRefresh?'Last: '+new Date(d.lastRefresh).toLocaleTimeString('en-AU',{timeZone:'Australia/Melbourne'}):(d.lastError||'Ready');document.getElementById('loadingBar').classList.remove('active');document.getElementById('refreshBtn').disabled=false}if(d.meta){document.getElementById('statShortlisted').textContent=d.meta.shortlistCount||'—';if(d.meta.lastRefresh){var dt=new Date(d.meta.lastRefresh);document.getElementById('statUpdated').textContent=dt.toLocaleDateString('en-AU',{day:'2-digit',month:'short',timeZone:'Australia/Melbourne'})+' · '+dt.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',timeZone:'Australia/Melbourne'})}}return d.status}catch(e){return'error'}}
+
 async function loadShortlist(){try{var r=await fetch('/api/shortlist');shortlistData=await r.json();populateLeagueFilter();renderTable()}catch(e){}}
-function populateLeagueFilter(){var s=document.getElementById('leagueFilter');var ls=[...new Set(shortlistData.map(function(m){return m.league}))].sort();while(s.options.length>1)s.remove(1);ls.forEach(function(l){var o=document.createElement('option');o.value=l;o.textContent=l;s.appendChild(o)})}
-function getFilteredData(){return shortlistData.filter(function(m){if(filters.grade!=='all'&&m.grade!==filters.grade)return false;if(filters.league!=='all'&&m.league!==filters.league)return false;if(filters.focus==='o25'&&(m.o25score||0)<3)return false;if(filters.focus==='btts'&&(m.bttsScore||0)<3)return false;return true})}
-function sortData(data){var key=currentSort.key,dir=currentSort.dir;var mult=dir==='asc'?1:-1;return data.slice().sort(function(a,b){var va,vb;switch(key){case'prob':va=a.analysis&&a.analysis.o25?a.analysis.o25.probability||0:0;vb=b.analysis&&b.analysis.o25?b.analysis.o25.probability||0:0;break;case'grade':var go={'A+':4,'A':3,'B':2,'C':1};va=go[a.grade]||0;vb=go[b.grade]||0;break;case'kickoff':va=sortKey(a);vb=sortKey(b);break;case'league':va=a.league||'';vb=b.league||'';break;case'match':va=a.homeTeam||'';vb=b.homeTeam||'';break;case'edge':va=a.analysis&&a.analysis.o25&&a.analysis.o25.edge!=null?a.analysis.o25.edge:-999;vb=b.analysis&&b.analysis.o25&&b.analysis.o25.edge!=null?b.analysis.o25.edge:-999;break;default:va=a.analysis&&a.analysis.o25?a.analysis.o25.probability||0:0;vb=b.analysis&&b.analysis.o25?b.analysis.o25.probability||0:0}if(typeof va==='string')return mult*va.localeCompare(vb);return mult*((va||0)-(vb||0))})}
-function renderTable(){var tbody=document.getElementById('tableBody'),empty=document.getElementById('emptyState');var filtered=getFilteredData(),sorted=sortData(filtered);if(!sorted.length){tbody.innerHTML='';empty.style.display='block';return}empty.style.display='none';
-tbody.innerHTML=sorted.map(function(m){var a=m.analysis,prob=a&&a.o25?a.o25.probability:null,fair=a&&a.o25?a.o25.fairOdds:null,edge=a&&a.o25?a.o25.edge:null;var probPct=prob!=null?Math.round(prob*100):null;var probColor=probPct>=65?'var(--green)':probPct>=50?'var(--amber)':'var(--muted)';var hO=fmtPct(m.home?m.home.o25pct:null),aO=fmtPct(m.away?m.away.o25pct:null),hB=fmtPct(m.home?m.home.btsPct:null),aB=fmtPct(m.away?m.away.btsPct:null);var bestO=Math.max(m.home?m.home.o25pct||0:0,m.away?m.away.o25pct||0:0),bestB=Math.max(m.home?m.home.btsPct||0:0,m.away?m.away.btsPct||0:0);
-var flagsHtml=(m.flags||[]).map(function(f){var cls=flagClass(f);var label=humanFlag(f);return'<span class="flag '+cls+'" title="'+f+'">'+label+'</span>'}).join('');
-var oddsHtml='<span class="odds-none">\u2014</span>';if(m.odds&&m.odds.o25){oddsHtml='<div class="odds-box"><div class="odds-price">'+m.odds.o25.price.toFixed(2)+'</div><div class="odds-bookie">'+m.odds.o25.bookmaker+'</div></div>'}
-var edgeHtml='<span class="odds-none">\u2014</span>';if(edge!=null){var ec=edge>5?'var(--green)':edge>0?'var(--lime)':edge>-5?'var(--amber)':'var(--red)';edgeHtml='<div class="edge-box"><div class="edge-label">Edge</div><div class="edge-val" style="color:'+ec+'">'+(edge>0?'+':'')+edge.toFixed(1)+'%</div></div>'}
-var ko=fmtKickoff(m),dt=fmtDate(m);
-var probTip=probPct!=null?'Our model estimates a '+probPct+'% chance this match will have 3+ goals. Fair odds: '+(fair?fair.toFixed(2):'\u2014')+'. '+(edge!=null?(edge>0?'The bookie is offering more than fair price \u2014 potential value.':'The bookie price is below our fair estimate.'):'No market odds available to compare.'):'Insufficient data to calculate probability.';
-return'<tr><td><div class="tip" style="cursor:default"><div class="prob-big" style="color:'+probColor+'">'+(probPct!=null?probPct+'%':'\u2014')+'</div><div class="prob-sub">Fair: '+(fair?fair.toFixed(2):'\u2014')+'</div><span class="tip-text">'+probTip+'</span></div></td><td><span class="badge '+gradeClass(m.grade)+'">'+m.grade+'</span></td><td class="ko-cell">'+ko+'<br><span class="ko-date">'+dt+'</span></td><td class="league-code"><span title="'+(m.league||'')+'">'+(m.league||m.leagueSlug||'\u2014')+'</span></td><td><div class="match-title">'+m.homeTeam+' <span style="color:var(--muted-2)">vs</span> '+m.awayTeam+'</div></td><td><div class="signal"><div class="signal-label">O2.5</div><div class="signal-value '+pctClass(bestO)+'">'+hO+' <span>/</span> '+aO+'</div></div></td><td><div class="signal"><div class="signal-label">BTTS</div><div class="signal-value '+pctClass(bestB)+'">'+hB+' <span>/</span> '+aB+'</div></div></td><td class="odds-cell">'+oddsHtml+'</td><td class="odds-cell">'+edgeHtml+'</td><td><div class="flags">'+flagsHtml+'</div></td><td><div class="actions">'+(m.matchUrl?'<a href="'+m.matchUrl+'" target="_blank" rel="noopener" class="action">match</a>':'')+(m.leagueUrl?'<a href="'+m.leagueUrl+'" target="_blank" rel="noopener" class="action">league</a>':'')+'</div></td></tr>'}).join('')}
+
+function populateLeagueFilter(){var s=document.getElementById('leagueFilter');var ls=[...new Set(shortlistData.map(m=>m.league))].sort();while(s.options.length>1)s.remove(1);ls.forEach(l=>{var o=document.createElement('option');o.value=l;o.textContent=l;s.appendChild(o)})}
+
+function getFilteredData(){return shortlistData.filter(m=>{if(filters.grade!=='all'&&m.grade!==filters.grade)return false;if(filters.league!=='all'&&m.league!==filters.league)return false;if(filters.direction!=='all'&&m.direction!==filters.direction)return false;return true})}
+
+function sortData(data){var key=currentSort.key,dir=currentSort.dir,mult=dir==='asc'?1:-1;return data.slice().sort(function(a,b){var va,vb;switch(key){case'prob':
+  va=a.analysis?((a.direction==='u25'?a.analysis.u25:a.analysis.o25)?.probability||0):0;
+  vb=b.analysis?((b.direction==='u25'?b.analysis.u25:b.analysis.o25)?.probability||0):0;break;
+case'grade':var go={'A+':4,'A':3,'B':2,'C':1};va=go[a.grade]||0;vb=go[b.grade]||0;break;
+case'kickoff':va=sortKey(a);vb=sortKey(b);break;
+case'league':va=a.league||'';vb=b.league||'';break;
+case'match':va=a.homeTeam||'';vb=b.homeTeam||'';break;
+case'edge':
+  va=a.analysis?((a.direction==='u25'?a.analysis.u25:a.analysis.o25)?.edge??-999):-999;
+  vb=b.analysis?((b.direction==='u25'?b.analysis.u25:b.analysis.o25)?.edge??-999):-999;break;
+default:va=0;vb=0;}if(typeof va==='string')return mult*va.localeCompare(vb);return mult*((va||0)-(vb||0))})}
+
+function renderTable(){
+  var tbody=document.getElementById('tableBody'),empty=document.getElementById('emptyState');
+  var filtered=getFilteredData(),sorted=sortData(filtered);
+  if(!sorted.length){tbody.innerHTML='';empty.style.display='block';return}
+  empty.style.display='none';
+
+  tbody.innerHTML=sorted.map(m=>{
+    var isU25=m.direction==='u25';
+    var a=m.analysis;
+    var mktA=a?(isU25?a.u25:a.o25):null;
+    var prob=mktA?.probability;
+    var fair=mktA?.fairOdds;
+    var edge=mktA?.edge;
+    var probPct=prob!=null?Math.round(prob*100):null;
+    var probColor=probPct>=65?'var(--green)':probPct>=50?'var(--amber)':'var(--muted)';
+
+    // O2.5 stats column: home O2.5% / away O2.5%
+    var hO=fmtPct(m.home?.o25pct),aO=fmtPct(m.away?.o25pct);
+    var bestO=Math.max(m.home?.o25pct||0,m.away?.o25pct||0);
+
+    // U2.5 stats column: home CS% / away CS% (with FTS% as sub)
+    var hCS=fmtPct(m.home?.csPct),aCS=fmtPct(m.away?.csPct);
+    var hFTS=fmtPct(m.home?.ftsPct),aFTS=fmtPct(m.away?.ftsPct);
+    var bestCS=Math.max(m.home?.csPct||0,m.away?.csPct||0);
+
+    // Direction badge
+    var dirBadge=isU25
+      ?'<span class="dir-badge dir-u25">U2.5</span>'
+      :'<span class="dir-badge dir-o25">O2.5</span>';
+
+    // Flags - include 'lock' class for U2.5 defensive flags
+    var flagsHtml=(m.flags||[]).map(f=>`<span class="flag ${flagClass(f)}">${f.replace(/^[🔥📈⚠🔒]\s*/,'')}</span>`).join('');
+
+    // Odds box - colour based on direction
+    var oddsHtml='<span class="odds-none">—</span>';
+    var oddsData=isU25?m.odds?.u25:m.odds?.o25;
+    if(oddsData){
+      if(isU25){
+        oddsHtml=`<div class="odds-box-u25"><div class="odds-price-u25">${oddsData.price.toFixed(2)}</div><div class="odds-bookie-u25">${oddsData.bookmaker}</div></div>`;
+      } else {
+        oddsHtml=`<div class="odds-box"><div class="odds-price">${oddsData.price.toFixed(2)}</div><div class="odds-bookie">${oddsData.bookmaker}</div></div>`;
+      }
+    }
+
+    // Edge
+    var edgeHtml='<span class="odds-none">—</span>';
+    if(edge!=null){var ec=edge>5?'var(--green)':edge>0?'var(--lime)':edge>-5?'var(--amber)':'var(--red)';edgeHtml=`<div class="edge-box"><div class="edge-label">Edge</div><div class="edge-val" style="color:${ec}">${edge>0?'+':''}${edge.toFixed(1)}%</div></div>`;}
+
+    var ko=fmtKickoff(m),dt=fmtDate(m);
+    var dirLabel=isU25?'Under 2.5 goals':'Over 2.5 goals';
+    var probTip=probPct!=null?`Model estimates ${probPct}% chance of ${dirLabel}. Fair odds: ${fair?fair.toFixed(2):'—'}. ${edge!=null?(edge>0?'Bookie price exceeds fair — potential value.':'Bookie price below fair — avoid.'):'No market odds to compare.'}`:'Insufficient data.';
+
+    return`<tr>
+<td><div class="tip" style="cursor:default"><div class="prob-big" style="color:${probColor}">${probPct!=null?probPct+'%':'—'}</div><div class="prob-sub">Fair: ${fair?fair.toFixed(2):'—'}</div><span class="tip-text">${probTip}</span></div></td>
+<td><span class="badge ${gradeClass(m.grade)}">${m.grade}</span></td>
+<td>${dirBadge}</td>
+<td class="ko-cell">${ko}<br><span class="ko-date">${dt}</span></td>
+<td class="league-code"><span title="${m.league||''}">${m.league||m.leagueSlug||'—'}</span></td>
+<td><div class="match-title">${m.homeTeam} <span style="color:var(--muted-2)">vs</span> ${m.awayTeam}</div></td>
+<td><div class="signal"><div class="signal-label">O2.5</div><div class="signal-value ${pctClass(bestO)}">${hO} <span>/</span> ${aO}</div></div></td>
+<td><div class="signal-u25"><div class="signal-label">CS% / FTS%</div><div class="signal-value ${pctClass(bestCS)}">${hCS}<span style="font-size:10px;color:var(--muted-2)">cs</span> / ${aCS}<span style="font-size:10px;color:var(--muted-2)">cs</span></div><div style="font-size:10px;color:var(--muted-2);margin-top:2px">${hFTS} / ${aFTS} <span>fts</span></div></div></td>
+<td class="odds-cell">${oddsHtml}</td>
+<td class="odds-cell">${edgeHtml}</td>
+<td><div class="flags">${flagsHtml}</div></td>
+<td><div class="actions">${m.matchUrl?`<a href="${m.matchUrl}" target="_blank" rel="noopener" class="action">match</a>`:''}${m.leagueUrl?`<a href="${m.leagueUrl}" target="_blank" rel="noopener" class="action">league</a>`:''}</div></td>
+</tr>`}).join('');}
+
 async function triggerRefresh(){document.getElementById('refreshBtn').disabled=true;await fetch('/api/refresh',{method:'POST'});pollUntilDone()}
 async function pollUntilDone(){var s=await loadStatus();if(s==='running')setTimeout(pollUntilDone,2000);else await loadShortlist()}
 function applyFilters(){filters.league=document.getElementById('leagueFilter').value;renderTable()}
-document.querySelectorAll('thead th[data-sort]').forEach(function(th){th.addEventListener('click',function(){var key=th.dataset.sort;if(currentSort.key===key)currentSort.dir=currentSort.dir==='desc'?'asc':'desc';else currentSort={key:key,dir:'desc'};document.querySelectorAll('thead th').forEach(function(t){t.classList.remove('sorted-asc','sorted-desc')});th.classList.add(currentSort.dir==='asc'?'sorted-asc':'sorted-desc');renderTable()})});
-document.querySelectorAll('.filter-chip').forEach(function(chip){chip.addEventListener('click',function(){var group=chip.dataset.group;if(!group)return;document.querySelectorAll('.filter-chip[data-group="'+group+'"]').forEach(function(c){c.classList.remove('active')});chip.classList.add('active');filters[group]=chip.dataset.val;renderTable()})});
+
+document.querySelectorAll('thead th[data-sort]').forEach(th=>{th.addEventListener('click',()=>{var key=th.dataset.sort;if(currentSort.key===key)currentSort.dir=currentSort.dir==='desc'?'asc':'desc';else currentSort={key,dir:'desc'};document.querySelectorAll('thead th').forEach(t=>t.classList.remove('sorted-asc','sorted-desc'));th.classList.add(currentSort.dir==='asc'?'sorted-asc':'sorted-desc');renderTable()})});
+document.querySelectorAll('.filter-chip').forEach(chip=>{chip.addEventListener('click',()=>{var group=chip.dataset.group;if(!group)return;document.querySelectorAll(`.filter-chip[data-group="${group}"]`).forEach(c=>c.classList.remove('active'));chip.classList.add('active');filters[group]=chip.dataset.val;renderTable()})});
+
 async function init(){var s=await loadStatus();await loadShortlist();if(s==='running')pollUntilDone();setInterval(loadStatus,30000)}
 
-// ── Tab switching ────────────────────────────────────────────
-function switchTab(tab) {
-  document.getElementById('tabShortlist').classList.toggle('active', tab === 'shortlist');
-  document.getElementById('tabPerf').classList.toggle('active', tab === 'perf');
-  const isShortlist = tab === 'shortlist';
-  document.getElementById('statsSection').style.display = isShortlist ? '' : 'none';
-  document.getElementById('filtersSection').style.display = isShortlist ? '' : 'none';
-  document.getElementById('tableShellSection').style.display = isShortlist ? '' : 'none';
-  document.getElementById('emptyState').style.display = isShortlist && document.getElementById('tableBody').innerHTML === '' ? 'block' : 'none';
-  document.getElementById('perfPanel').style.display = isShortlist ? 'none' : '';
-  if (!isShortlist) loadPerformance();
+function switchTab(tab){
+  document.getElementById('tabShortlist').classList.toggle('active',tab==='shortlist');
+  document.getElementById('tabPerf').classList.toggle('active',tab==='perf');
+  var isSL=tab==='shortlist';
+  document.getElementById('statsSection').style.display=isSL?'':'none';
+  document.getElementById('filtersSection').style.display=isSL?'':'none';
+  document.getElementById('tableShellSection').style.display=isSL?'':'none';
+  document.getElementById('emptyState').style.display=isSL&&document.getElementById('tableBody').innerHTML===''?'block':'none';
+  document.getElementById('perfPanel').style.display=isSL?'none':'';
+  if(!isSL)loadPerformance();
 }
 
-// ── Manual settle trigger ────────────────────────────────────
-async function triggerSettle(btn) {
-  btn.disabled = true;
-  btn.textContent = '⟳ Settling...';
-  try {
-    const r = await fetch('/api/settle', { method: 'POST' });
-    const d = await r.json();
-    btn.textContent = `✓ ${d.settled || 0} settled`;
-    if (document.getElementById('tabPerf').classList.contains('active')) loadPerformance();
-  } catch(e) {
-    btn.textContent = '✗ Error';
-  }
-  setTimeout(() => { btn.textContent = '↻ Settle now'; btn.disabled = false; }, 3000);
+async function triggerSettle(btn){
+  btn.disabled=true;btn.textContent='⟳ Settling...';
+  try{var r=await fetch('/api/settle',{method:'POST'});var d=await r.json();btn.textContent=`✓ ${d.settled||0} settled`;if(document.getElementById('tabPerf').classList.contains('active'))loadPerformance();}
+  catch(e){btn.textContent='✗ Error';}
+  setTimeout(()=>{btn.textContent='↻ Settle now';btn.disabled=false;},3000);
 }
 
-// ── Performance market tab switching ────────────────────────
-function switchPerfMarketTab(market) {
-  activePerfMarket = market;
-  document.getElementById('perfTabO25').classList.toggle('active', market === 'over_2.5');
-  document.getElementById('perfTabBtts').classList.toggle('active', market === 'btts');
-  document.getElementById('perfTableLabel').textContent =
-    market === 'over_2.5' ? 'Recent Settled — Over 2.5' : 'Recent Settled — BTTS';
-  if (perfData) renderPerfTable(perfData.recentSettled || []);
+function switchPerfMarketTab(market){
+  activePerfMarket=market;
+  var isU25=market==='under_2.5';
+  document.getElementById('perfTabO25').className='market-tab'+(market==='over_2.5'?' active':'');
+  document.getElementById('perfTabU25').className='market-tab'+(isU25?' active-u25':'');
+  document.getElementById('perfTableLabel').textContent=isU25?'Recent Settled — Under 2.5':'Recent Settled — Over 2.5';
+  if(perfData)renderPerfTable(perfData.recentSettled||[]);
 }
 
-// ── Performance panel ────────────────────────────────────────
-async function loadPerformance() {
-  document.getElementById('perfLoading').style.display = 'block';
-  document.getElementById('perfContent').style.display = 'none';
-  try {
-    const r = await fetch('/api/stats');
-    perfData = await r.json();
-    renderPerformance(perfData);
-  } catch(e) {
-    document.getElementById('perfLoading').textContent = 'Failed to load performance data.';
-  }
+async function loadPerformance(){
+  document.getElementById('perfLoading').style.display='block';
+  document.getElementById('perfContent').style.display='none';
+  try{var r=await fetch('/api/stats');perfData=await r.json();renderPerformance(perfData);}
+  catch(e){document.getElementById('perfLoading').textContent='Failed to load performance data.';}
 }
 
-function fmt(v, suffix='', decimals=1) {
-  if (v == null) return '—';
-  return (typeof v === 'number' ? v.toFixed(decimals) : v) + suffix;
-}
-function fmtPctProb(v) { return v == null ? '—' : Math.round(v * 100) + '%'; }
-function resultBadge(status) {
-  if (status === 'settled_won') return '<span style="color:var(--green);font-weight:700">✓ Won</span>';
-  if (status === 'settled_lost') return '<span style="color:var(--red);font-weight:700">✗ Lost</span>';
-  return '<span style="color:var(--muted)">—</span>';
-}
-function clvColor(v) {
-  if (v == null) return 'var(--muted)';
-  if (v > 3) return 'var(--green)';
-  if (v > 0) return 'var(--lime)';
-  if (v > -3) return 'var(--amber)';
-  return 'var(--red)';
-}
-function edgeColor(v) {
-  if (v == null) return 'var(--muted)';
-  if (v > 5) return 'var(--green)';
-  if (v > 0) return 'var(--lime)';
-  if (v > -5) return 'var(--amber)';
-  return 'var(--red)';
-}
+function fmt(v,suffix='',decimals=1){if(v==null)return'—';return(typeof v==='number'?v.toFixed(decimals):v)+suffix;}
+function fmtPctProb(v){return v==null?'—':Math.round(v*100)+'%';}
+function resultBadge(s){if(s==='settled_won')return'<span style="color:var(--green);font-weight:700">✓ Won</span>';if(s==='settled_lost')return'<span style="color:var(--red);font-weight:700">✗ Lost</span>';return'<span style="color:var(--muted)">—</span>';}
+function clvColor(v){if(v==null)return'var(--muted)';if(v>3)return'var(--green)';if(v>0)return'var(--lime)';if(v>-3)return'var(--amber)';return'var(--red)';}
+function edgeColor(v){if(v==null)return'var(--muted)';if(v>5)return'var(--green)';if(v>0)return'var(--lime)';if(v>-5)return'var(--amber)';return'var(--red)';}
+function moveColor(v){if(v==null)return'var(--muted)';if(v>3)return'var(--green)';if(v>0)return'var(--lime)';if(v<-3)return'var(--red)';return'var(--amber)';}
 
-function renderPerformance(d) {
-  const s = d.summary || {};
-  const o25 = d.markets && d.markets['over_2.5'] || {};
-  const btts = d.markets && d.markets['btts'] || {};
+function renderPerformance(d){
+  var s=d.summary||{};
+  var o25=d.markets&&d.markets['over_2.5']||{};
+  var u25=d.markets&&d.markets['under_2.5']||{};
 
-  // Summary cards
-  const cards = [
-    { label: 'Total Predictions', value: s.total || 0, sub: 'across all markets', color: 'var(--cyan)' },
-    { label: 'Settled', value: s.settled || 0, sub: `${s.pending||0} pending · ${s.awaiting||0} awaiting`, color: 'var(--blue)' },
-    { label: 'Void Rate', value: fmt(s.voidRatePct, '%'), sub: `${s.void||0} voids (postponed etc)`, color: s.voidRatePct > 10 ? 'var(--amber)' : 'var(--muted)' },
-    { label: 'Overall Hit Rate', value: s.settled > 0 ? fmt(s.won / s.settled * 100, '%') : '—', sub: `${s.won||0} of ${s.settled||0} correct`, color: 'var(--green)' },
+  var cards=[
+    {label:'Total Predictions',value:s.total||0,sub:'across both markets',color:'var(--cyan)'},
+    {label:'Settled',value:s.settled||0,sub:`${s.pending||0} pending · ${s.awaiting||0} awaiting`,color:'var(--blue)'},
+    {label:'Void Rate',value:fmt(s.voidRatePct,'%'),sub:`${s.void||0} voids`,color:s.voidRatePct>10?'var(--amber)':'var(--muted)'},
+    {label:'Overall Hit Rate',value:s.settled>0?fmt(s.won/s.settled*100,'%'):'—',sub:`${s.won||0} of ${s.settled||0} correct`,color:'var(--green)'},
   ];
-  document.getElementById('perfSummaryCards').innerHTML = cards.map(c =>
-    `<div class="perf-card"><div class="perf-card-label">${c.label}</div><div class="perf-card-value" style="color:${c.color}">${c.value}</div><div class="perf-card-sub">${c.sub}</div></div>`
-  ).join('');
+  document.getElementById('perfSummaryCards').innerHTML=cards.map(c=>`<div class="perf-card"><div class="perf-card-label">${c.label}</div><div class="perf-card-value" style="color:${c.color}">${c.value}</div><div class="perf-card-sub">${c.sub}</div></div>`).join('');
 
-  // Market panels
-  function marketPanel(label, m, accent) {
-    const rows = [
-      ['Predictions logged', fmt(m.total, '', 0)],
-      ['Settled', fmt(m.settled, '', 0)],
-      ['Pending / Awaiting', `${m.pending||0} / ${m.awaiting||0}`],
-      ['Void', fmt(m.void, '', 0)],
-      ['Hit rate', m.hitRate != null ? `<span style="color:${m.hitRate>=55?'var(--green)':m.hitRate>=45?'var(--amber)':'var(--red)'}">${m.hitRate}%</span>` : '—'],
-      ['Mean model prob', fmt(m.meanModelProb, '%')],
-      ['Brier score', m.brierScore != null ? `<span title="Lower is better. 0.25 = coin flip">${m.brierScore}</span>` : '— <span style="color:var(--muted-2);font-weight:400;font-size:11px">(need settled data)</span>'],
-      ['Mean edge at tip', m.meanEdgePct != null ? `<span style="color:${edgeColor(m.meanEdgePct)}">${m.meanEdgePct > 0 ? '+' : ''}${m.meanEdgePct}%</span>` : '—'],
-      ['Mean CLV', m.meanCLVPct != null ? `<span style="color:${clvColor(m.meanCLVPct)}">${m.meanCLVPct > 0 ? '+' : ''}${m.meanCLVPct}%</span> <span style="color:var(--muted-2);font-size:11px">(n=${m.clvSampleSize})</span>` : '— <span style="color:var(--muted-2);font-weight:400;font-size:11px">(need closing odds)</span>'],
+  function marketPanel(label,m,accent,id){
+    var rows=[
+      ['Predictions logged',fmt(m.total,'',0)],
+      ['Settled',fmt(m.settled,'',0)],
+      ['Pending / Awaiting',`${m.pending||0} / ${m.awaiting||0}`],
+      ['Void',fmt(m.void,'',0)],
+      ['Hit rate',m.hitRate!=null?`<span style="color:${m.hitRate>=55?'var(--green)':m.hitRate>=45?'var(--amber)':'var(--red)'}">${m.hitRate}%</span>`:'—'],
+      ['Mean model prob',fmt(m.meanModelProb,'%')],
+      ['Brier score',m.brierScore!=null?`${m.brierScore}`:'— <span style="color:var(--muted-2);font-weight:400;font-size:11px">(need settled data)</span>'],
+      ['Mean edge at tip',m.meanEdgePct!=null?`<span style="color:${edgeColor(m.meanEdgePct)}">${m.meanEdgePct>0?'+':''}${m.meanEdgePct}%</span>`:'—'],
+      ['Mean pre-KO move',m.meanPreKickoffMovePct!=null?`<span style="color:${moveColor(m.meanPreKickoffMovePct)}">${m.meanPreKickoffMovePct>0?'+':''}${m.meanPreKickoffMovePct}%</span> <span style="color:var(--muted-2);font-size:11px">(n=${m.preKickoffSampleSize})</span>`:'— <span style="color:var(--muted-2);font-weight:400;font-size:11px">(accumulating)</span>'],
+      ['Mean CLV',m.meanCLVPct!=null?`<span style="color:${clvColor(m.meanCLVPct)}">${m.meanCLVPct>0?'+':''}${m.meanCLVPct}%</span> <span style="color:var(--muted-2);font-size:11px">(n=${m.clvSampleSize})</span>`:'— <span style="color:var(--muted-2);font-weight:400;font-size:11px">(need closing odds)</span>'],
     ];
-    return `<div class="perf-market-panel">
-      <div style="font-size:15px;font-weight:700;margin-bottom:14px;color:${accent}">${label}</div>
-      ${rows.map(([l,v]) => `<div class="perf-row"><span class="perf-row-label">${l}</span><span class="perf-row-val">${v}</span></div>`).join('')}
-    </div>`;
+    return`<div class="perf-market-panel" id="${id}"><div style="font-size:15px;font-weight:700;margin-bottom:14px;color:${accent}">${label}</div>${rows.map(([l,v])=>`<div class="perf-row"><span class="perf-row-label">${l}</span><span class="perf-row-val">${v}</span></div>`).join('')}</div>`;
   }
 
-  document.getElementById('perfO25Panel').outerHTML = marketPanel('Over 2.5 Goals', o25, 'var(--green)').replace('class="perf-market-panel"', 'id="perfO25Panel" class="perf-market-panel"');
-  document.getElementById('perfBttsPanel').outerHTML = marketPanel('Both Teams To Score', btts, 'var(--amber)').replace('class="perf-market-panel"', 'id="perfBttsPanel" class="perf-market-panel"');
+  document.getElementById('perfO25Panel').outerHTML=marketPanel('Over 2.5 Goals',o25,'var(--green)','perfO25Panel');
+  document.getElementById('perfU25Panel').outerHTML=marketPanel('Under 2.5 Goals',u25,'var(--indigo)','perfU25Panel');
 
-  // Render table for current active market tab
-  renderPerfTable(d.recentSettled || []);
-
-  document.getElementById('perfLoading').style.display = 'none';
-  document.getElementById('perfContent').style.display = 'block';
+  renderPerfTable(d.recentSettled||[]);
+  document.getElementById('perfLoading').style.display='none';
+  document.getElementById('perfContent').style.display='block';
 }
 
-// ── Render performance settled table filtered by active market ─
-function renderPerfTable(allSettled) {
-  const rows = allSettled.filter(p => p.market === activePerfMarket);
-
-  if (rows.length === 0) {
-    document.getElementById('perfTableBody').innerHTML =
-      `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted);font-size:13px">No settled ${activePerfMarket === 'over_2.5' ? 'Over 2.5' : 'BTTS'} predictions yet.</td></tr>`;
+function renderPerfTable(all){
+  var rows=all.filter(p=>p.market===activePerfMarket);
+  if(!rows.length){
+    document.getElementById('perfTableBody').innerHTML=`<tr><td colspan="12" style="text-align:center;padding:2rem;color:var(--muted);font-size:13px">No settled ${activePerfMarket==='over_2.5'?'Over 2.5':'Under 2.5'} predictions yet.</td></tr>`;
     return;
   }
-
-  document.getElementById('perfTableBody').innerHTML = rows.map(p => {
-    const edgeStr = p.edge != null ? `<span style="color:${edgeColor(p.edge)}">${p.edge > 0 ? '+' : ''}${p.edge.toFixed(1)}%</span>` : '—';
-    const clvStr = p.clvPct != null ? `<span style="color:${clvColor(p.clvPct)}">${p.clvPct > 0 ? '+' : ''}${p.clvPct.toFixed(1)}%</span>` : '—';
-    return `<tr style="border-bottom:1px solid rgba(255,255,255,.06)">
-      <td style="padding:11px 10px;font-size:12px;color:var(--muted)">${p.predictionDate}</td>
-      <td style="padding:11px 10px;font-size:13px;font-weight:600">${p.homeTeam} vs ${p.awayTeam}</td>
-      <td style="padding:11px 10px;text-align:right;font-weight:700">${fmtPctProb(p.modelProbability)}</td>
-      <td style="padding:11px 10px;text-align:right;color:var(--muted)">${fmt(p.fairOdds)}</td>
-      <td style="padding:11px 10px;text-align:right;color:var(--violet)">${fmt(p.marketOdds)}</td>
-      <td style="padding:11px 10px;text-align:right">${edgeStr}</td>
-      <td style="padding:11px 10px;text-align:right;color:var(--muted)">${fmt(p.closingOdds)}</td>
-      <td style="padding:11px 10px;text-align:right">${clvStr}</td>
-      <td style="padding:11px 10px;text-align:center;font-weight:700;color:var(--cyan)">${p.score || '—'}</td>
-      <td style="padding:11px 10px;text-align:center">${resultBadge(p.status)}</td>
-    </tr>`;
-  }).join('');
-}
+  document.getElementById('perfTableBody').innerHTML=rows.map(p=>{
+    var edgeStr=p.edge!=null?`<span style="color:${edgeColor(p.edge)}">${p.edge>0?'+':''}${p.edge.toFixed(1)}%</span>`:'—';
+    var clvStr=p.clvPct!=null?`<span style="color:${clvColor(p.clvPct)}">${p.clvPct>0?'+':''}${p.clvPct.toFixed(1)}%</span>`:'—';
+    var moveStr=p.preKickoffMovePct!=null?`<span style="color:${moveColor(p.preKickoffMovePct)}">${p.preKickoffMovePct>0?'+':''}${p.preKickoffMovePct.toFixed(1)}%</span>`:'—';
+    return`<tr style="border-bottom:1px solid rgba(255,255,255,.06)">
+<td style="padding:11px 10px;font-size:12px;color:var(--muted)">${p.predictionDate}</td>
+<td style="padding:11px 10px;font-size:13px;font-weight:600">${p.homeTeam} vs ${p.awayTeam}</td>
+<td style="padding:11px 10px;text-align:right;font-weight:700">${fmtPctProb(p.modelProbability)}</td>
+<td style="padding:11px 10px;text-align:right;color:var(--muted)">${fmt(p.fairOdds)}</td>
+<td style="padding:11px 10px;text-align:right;color:var(--violet)">${fmt(p.marketOdds)}</td>
+<td style="padding:11px 10px;text-align:right">${edgeStr}</td>
+<td style="padding:11px 10px;text-align:right;color:var(--muted)">${fmt(p.preKickoffOdds)}</td>
+<td style="padding:11px 10px;text-align:right">${moveStr}</td>
+<td style="padding:11px 10px;text-align:right;color:var(--muted)">${fmt(p.closingOdds)}</td>
+<td style="padding:11px 10px;text-align:right">${clvStr}</td>
+<td style="padding:11px 10px;text-align:center;font-weight:700;color:var(--cyan)">${p.score||'—'}</td>
+<td style="padding:11px 10px;text-align:center">${resultBadge(p.status)}</td>
+</tr>`;
+  }).join('');}
 
 init();
 </script>

@@ -1,47 +1,47 @@
 // src/engine/probability.js
 // ─────────────────────────────────────────────────────────────
-// Probability estimation engine.
+// Probability estimation engine — O2.5 and U2.5.
 //
-// Converts raw SoccerSTATS percentages into calibrated
-// probability estimates for Over 2.5 and BTTS markets.
+// P(Over 2.5) is estimated from weighted team/league stats.
+// P(Under 2.5) = 1 - P(Over 2.5).
 //
-// This is the BASELINE model. It uses weighted averages of
-// available indicators. Future versions will add xG-based
-// Poisson modelling, but this baseline must exist first so
-// we can measure whether xG actually improves things.
+// ── Margin removal (devigging) ─────────────────────────────
 //
-// ── Methodology ────────────────────────────────────────────
+// Bookmakers build a profit margin (overround) into their odds.
+// A soccer O2.5 two-way market typically carries 3-7% margin
+// depending on the bookmaker (Pinnacle ~2-3%, Bet365 ~5-7%).
 //
-// P(Over 2.5):
-//   Weighted average of:
-//     - Home team home O2.5% (weight 0.35)
-//     - Away team away O2.5% (weight 0.35)
-//     - League average O2.5% (weight 0.10)
-//     - Combined avg TG signal (weight 0.20)
-//       → converted: if combined TG >= 2.5, boost probability
+// Raw implied probabilities always sum to MORE than 100%,
+// meaning they overstate the market's true view of each side.
 //
-// P(BTTS):
-//   Weighted average of:
-//     - Home team home BTTS% (weight 0.30)
-//     - Away team away BTTS% (weight 0.30)
-//     - League average BTTS% (weight 0.10)
-//     - FTS/CS penalty (weight 0.30)
-//       → if either team has high FTS% or opponent has high CS%,
-//         this drags BTTS probability down
+// Before comparing your model probability to the market,
+// the margin must be removed ("devigging"):
 //
-// Fair odds = 1 / probability
-// Edge = (market_odds / fair_odds - 1) * 100
-//   Positive edge = model thinks bet is underpriced (value)
-//   Negative edge = model thinks bet is overpriced (avoid)
+//   impliedOver  = 1 / oddsOver
+//   impliedUnder = 1 / oddsUnder
+//   total        = impliedOver + impliedUnder      (e.g. 1.029)
+//   trueOver     = impliedOver / total             (normalised)
+//   trueUnder    = impliedUnder / total
 //
-// ── Calibration notes ──────────────────────────────────────
+// Edge is then:
+//   edge = (yourProbability / trueMarketProbability - 1) * 100
 //
-// These weights are starting estimates. Once we have 200+
-// logged predictions with results, we can check calibration
-// and adjust weights to minimize Brier score.
+// This removes false edge caused by bookmaker margin and gives
+// a clean measure of whether your model disagrees with the
+// market AFTER costs are stripped out.
 //
-// The model version string tracks which weights/logic was used
-// so we can compare v1 vs v2 etc.
+// ── Edge interpretation ────────────────────────────────────
+//
+//   Positive edge = your model thinks the true probability is
+//     HIGHER than the market's margin-free view → potential value
+//   Negative edge = model is below the market's true view → avoid
+//   Edge of +5% means your model says 55% vs market's 50% true view
+//
+// ── Calibration ────────────────────────────────────────────
+//
+// Weights are starting estimates. At 200+ settled predictions,
+// compare mean model probability to actual hit rate per direction
+// and minimise Brier score independently for O2.5 and U2.5.
 // ─────────────────────────────────────────────────────────────
 
 const MODEL_VERSION = 'baseline-v1';
@@ -57,94 +57,28 @@ function estimateO25(match, leagueStats = {}) {
   const inputs = [];
   const weights = [];
 
-  // Home team home O2.5%
   if (h.o25pct != null) {
     inputs.push(h.o25pct / 100);
     weights.push(0.35);
   }
 
-  // Away team away O2.5%
   if (a.o25pct != null) {
     inputs.push(a.o25pct / 100);
     weights.push(0.35);
   }
 
-  // League average O2.5
   if (leagueStats.o25pct != null) {
     inputs.push(leagueStats.o25pct / 100);
     weights.push(0.10);
   }
 
-  // Combined TG signal
   if (h.avgTG != null && a.avgTG != null) {
-    // Convert combined TG to a probability-like signal
-    // TG of 5.0+ → strong O2.5 signal (~0.75)
-    // TG of 3.5 → moderate signal (~0.55)
-    // TG of 2.0 → weak signal (~0.30)
     const combined = h.avgTG + a.avgTG;
+    // Maps combined TG to a probability signal:
+    // 5.0+ → ~0.73, 3.5 → ~0.50, 2.0 → ~0.25
     const tgSignal = Math.min(0.95, Math.max(0.10, (combined - 1.5) / 5.0));
     inputs.push(tgSignal);
     weights.push(0.20);
-  }
-
-  if (inputs.length < 2) return null; // insufficient data
-
-  // Weighted average
-  const totalWeight = weights.reduce((s, w) => s + w, 0);
-  const prob = inputs.reduce((s, v, i) => s + v * weights[i], 0) / totalWeight;
-
-  // Clamp to reasonable range
-  return Math.min(0.95, Math.max(0.05, prob));
-}
-
-/**
- * Estimate P(BTTS Yes) for a match.
- * Returns a value between 0 and 1, or null if insufficient data.
- */
-function estimateBTTS(match, leagueStats = {}) {
-  const h = match.home || {};
-  const a = match.away || {};
-
-  const inputs = [];
-  const weights = [];
-
-  // Home team home BTTS%
-  if (h.btsPct != null) {
-    inputs.push(h.btsPct / 100);
-    weights.push(0.30);
-  }
-
-  // Away team away BTTS%
-  if (a.btsPct != null) {
-    inputs.push(a.btsPct / 100);
-    weights.push(0.30);
-  }
-
-  // League average BTTS
-  if (leagueStats.btsPct != null) {
-    inputs.push(leagueStats.btsPct / 100);
-    weights.push(0.10);
-  }
-
-  // FTS/CS penalty — the "mirror rule" check
-  // If either team often fails to score OR the opponent keeps clean sheets,
-  // BTTS probability drops significantly
-  if (h.ftsPct != null || a.ftsPct != null || h.csPct != null || a.csPct != null) {
-    // Average of "ability to be shut out"
-    const homeFTS = (h.ftsPct || 0) / 100;   // home team fails to score
-    const awayFTS = (a.ftsPct || 0) / 100;   // away team fails to score
-    const homeCS  = (h.csPct || 0) / 100;    // home keeps clean sheets
-    const awayCS  = (a.csPct || 0) / 100;    // away keeps clean sheets
-
-    // Probability both teams score is reduced by:
-    // P(home scores) ≈ 1 - max(homeFTS, awayCS)
-    // P(away scores) ≈ 1 - max(awayFTS, homeCS)
-    const pHomeScores = 1 - Math.max(homeFTS, awayCS);
-    const pAwayScores = 1 - Math.max(awayFTS, homeCS);
-    const bttsFromDefense = pHomeScores * pAwayScores;
-
-    inputs.push(bttsFromDefense);
-    weights.push(0.30);
   }
 
   if (inputs.length < 2) return null;
@@ -157,7 +91,6 @@ function estimateBTTS(match, leagueStats = {}) {
 
 /**
  * Calculate fair decimal odds from a probability.
- * Fair odds = 1 / probability
  */
 function fairOdds(prob) {
   if (!prob || prob <= 0) return null;
@@ -165,68 +98,118 @@ function fairOdds(prob) {
 }
 
 /**
- * Calculate edge percentage.
- * edge = (market_odds / fair_odds - 1) * 100
+ * Remove bookmaker margin from a two-way O2.5 / U2.5 market.
  *
- * Positive edge = market is offering more than fair price (value bet)
- * Negative edge = market is offering less than fair price (avoid)
+ * Bookmakers inflate implied probabilities so they sum above 100%.
+ * This function normalises both sides back to a true 100% market.
+ *
+ * Returns:
+ *   trueOver  — market's margin-free probability for Over 2.5
+ *   trueUnder — market's margin-free probability for Under 2.5
+ *   margin    — bookmaker's margin as a percentage (e.g. 2.9%)
+ *
+ * Returns nulls if either price is missing.
  */
-function calcEdge(marketOdds, fairOddsVal) {
-  if (!marketOdds || !fairOddsVal) return null;
-  return Math.round(((marketOdds / fairOddsVal) - 1) * 10000) / 100;
+function removeMargin(overPrice, underPrice) {
+  if (!overPrice || !underPrice) {
+    return { trueOver: null, trueUnder: null, margin: null };
+  }
+
+  const impliedOver  = 1 / overPrice;
+  const impliedUnder = 1 / underPrice;
+  const total = impliedOver + impliedUnder;
+
+  return {
+    trueOver:  Math.round((impliedOver  / total) * 10000) / 10000,
+    trueUnder: Math.round((impliedUnder / total) * 10000) / 10000,
+    margin:    Math.round((total - 1) * 10000) / 100,  // e.g. 2.87
+  };
+}
+
+/**
+ * Calculate edge against the market's TRUE (margin-free) probability.
+ *
+ * edge = (modelProbability / trueMarketProbability - 1) * 100
+ *
+ * Positive = model is above the market's fair view → potential value
+ * Negative = model is below the market's fair view → avoid
+ *
+ * This is cleaner than comparing model vs raw market odds, because
+ * it strips out the bookmaker's margin before measuring disagreement.
+ */
+function calcEdge(modelProbability, trueMarketProbability) {
+  if (!modelProbability || !trueMarketProbability) return null;
+  return Math.round(((modelProbability / trueMarketProbability) - 1) * 10000) / 100;
 }
 
 /**
  * Full probability analysis for a match.
- * Returns all model outputs needed for the pricing engine.
  *
- * Includes full odds snapshot at analysis time — bookmakerKey is
- * propagated so history.js can store a complete auditable record.
+ * Uses match.direction ('o25' or 'u25', set by shortlist.js) to
+ * determine which market side to measure edge against.
+ *
+ * Both sides of the market are always captured. Margin removal
+ * runs when both Over AND Under prices are available.
  */
 function analyseMatch(match, leagueStats = {}) {
   const o25prob = estimateO25(match, leagueStats);
-  const bttsProb = estimateBTTS(match, leagueStats);
+  const u25prob = o25prob != null
+    ? Math.round((1 - o25prob) * 10000) / 10000
+    : null;
 
   const o25fair = fairOdds(o25prob);
-  const bttsFair = fairOdds(bttsProb);
+  const u25fair = fairOdds(u25prob);
 
-  // Calculate edge against market odds if available
-  let o25edge = null;
+  const direction = match.direction || 'o25';
 
-  if (match.odds && match.odds.o25 && o25fair) {
-    o25edge = calcEdge(match.odds.o25.price, o25fair);
-  }
+  // Extract both market prices
+  const overPrice  = match.odds?.o25?.price  || null;
+  const underPrice = match.odds?.u25?.price  || null;
+
+  // Remove bookmaker margin from the two-way market
+  const { trueOver, trueUnder, margin } = removeMargin(overPrice, underPrice);
+
+  // Edge: model vs TRUE market probability (margin-stripped)
+  const o25edge = o25prob != null && trueOver  != null
+    ? calcEdge(o25prob, trueOver)
+    : null;
+
+  const u25edge = u25prob != null && trueUnder != null
+    ? calcEdge(u25prob, trueUnder)
+    : null;
 
   return {
     modelVersion: MODEL_VERSION,
     timestamp: new Date().toISOString(),
+    direction,
+    marketMarginPct: margin,  // stored for transparency / tracking
 
     o25: {
-      probability: o25prob,
-      fairOdds: o25fair,
-      // Full odds snapshot — captured at tip time, never recalculated
-      marketOdds: match.odds?.o25?.price || null,
-      bookmaker: match.odds?.o25?.bookmaker || null,
-      bookmakerKey: match.odds?.o25?.bookmakerKey || null,
-      edge: o25edge,
+      probability:         o25prob,
+      fairOdds:            o25fair,
+      marketOdds:          overPrice,
+      trueMarketProb:      trueOver,   // margin-stripped market view
+      bookmaker:           match.odds?.o25?.bookmaker    || null,
+      bookmakerKey:        match.odds?.o25?.bookmakerKey || null,
+      edge:                o25edge,
     },
 
-    btts: {
-      probability: bttsProb,
-      fairOdds: bttsFair,
-      // BTTS market odds not available from AU region Odds API
-      marketOdds: null,
-      bookmaker: null,
-      bookmakerKey: null,
-      edge: null,
+    u25: {
+      probability:         u25prob,
+      fairOdds:            u25fair,
+      marketOdds:          underPrice,
+      trueMarketProb:      trueUnder,  // margin-stripped market view
+      bookmaker:           match.odds?.u25?.bookmaker    || null,
+      bookmakerKey:        match.odds?.u25?.bookmakerKey || null,
+      edge:                u25edge,
     },
   };
 }
 
 module.exports = {
   estimateO25,
-  estimateBTTS,
   fairOdds,
+  removeMargin,
   calcEdge,
   analyseMatch,
   MODEL_VERSION,
