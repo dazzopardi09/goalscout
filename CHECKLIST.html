@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GoalScout — Build Checklist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#070d16;--panel:#08101b;--panel-2:#0b1220;--text:#e5edf8;--muted:#8b9ab0;--muted-2:#66758c;--line:rgba(255,255,255,0.08);--green:#6ee7b7;--amber:#fbbf24;--red:#f87171;--blue:#7dd3fc;--indigo:#818cf8;--violet:#c4b5fd}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);padding:32px 24px 64px;min-height:100vh}
+.app{max-width:860px;margin:0 auto}
+.header{margin-bottom:32px}
+.header h1{font-size:22px;font-weight:600;letter-spacing:-.02em;color:#a7f3d0}
+.header h1 span{color:#64748b;font-weight:400}
+.header p{margin-top:6px;font-size:13px;color:var(--muted);line-height:1.5}
+.progress-wrap{margin-bottom:28px}
+.progress-label{font-size:12px;color:var(--muted-2);margin-bottom:6px}
+.progress-bar{height:4px;border-radius:2px;background:var(--line);overflow:hidden}
+.progress-fill{height:100%;border-radius:2px;background:var(--green);transition:width .3s}
+.warning{border:1px solid rgba(251,191,36,.2);border-left:3px solid var(--amber);background:rgba(245,158,11,.08);border-radius:12px;padding:12px 16px;margin-bottom:24px;font-size:13px;color:#fcd34d;line-height:1.6}
+.section{margin-bottom:28px}
+.section-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.section-title{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2)}
+.badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px}
+.badge-red{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(248,113,113,.25)}
+.badge-amber{background:rgba(245,158,11,.15);color:var(--amber);border:1px solid rgba(251,191,36,.25)}
+.badge-blue{background:rgba(59,130,246,.15);color:var(--blue);border:1px solid rgba(125,211,252,.25)}
+.badge-green{background:rgba(16,185,129,.15);color:var(--green);border:1px solid rgba(110,231,183,.25)}
+.task{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:14px;margin-bottom:4px;cursor:pointer;border:1px solid transparent;transition:background .1s,border-color .1s}
+.task:hover{background:var(--panel);border-color:var(--line)}
+.task.done{opacity:.45}
+.task.done .task-title{text-decoration:line-through;color:var(--muted-2)}
+.checkbox{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--muted-2);flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.checkbox.checked{background:var(--green);border-color:var(--green)}
+.checkbox.checked::after{content:'';display:block;width:5px;height:9px;border:2px solid #052e16;border-top:none;border-left:none;transform:rotate(45deg) translate(-1px,-1px)}
+.task-body{flex:1;min-width:0}
+.task-title{font-size:14px;font-weight:500;line-height:1.4;color:var(--text)}
+.task-sub{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.6}
+.task-tags{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
+.tag{font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.04);color:var(--muted);border:1px solid var(--line)}
+.tag.file{color:#93c5fd;background:rgba(59,130,246,.08);border-color:rgba(125,211,252,.2)}
+.tag.warn{color:var(--amber);background:rgba(245,158,11,.08);border-color:rgba(251,191,36,.2)}
+.updated{font-size:11px;color:var(--muted-2);text-align:right;margin-top:24px;border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>GoalScout <span>/ Build Checklist</span></h1>
+    <p>Tick items off as they're completed. State is saved in localStorage — persists across browser sessions.</p>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-label" id="prog-label">0 of 12 tasks done</div>
+    <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+  </div>
+
+  <!-- ── NOW ─────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="badge badge-red">Now</span>
+      <span class="section-title">Session 1 — Sync + results source</span>
+    </div>
+
+    <div class="task" id="t1" onclick="toggle('t1')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Commit all new directional files to repo</div>
+        <div class="task-sub">The 8 files from last session were deployed on Unraid but not in git. Push them so a redeploy doesn't lose the work.</div>
+        <div class="task-tags"><span class="tag file">shortlist.js</span><span class="tag file">probability.js</span><span class="tag file">history.js</span><span class="tag file">the-odds-api.js</span><span class="tag file">orchestrator.js</span><span class="tag file">config.js</span><span class="tag file">docker-compose.yml</span><span class="tag file">index.html</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t2" onclick="toggle('t2')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Confirm O2.5 / U2.5 mix working after threshold fix</div>
+        <div class="task-sub">Trigger a manual refresh and check the log. Should show a mix — not 0 O2.5 / all U2.5. ✅ Confirmed: 2 O2.5, 6 U2.5 overnight.</div>
+        <div class="task-tags"><span class="tag file">shortlist.js</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t3" onclick="toggle('t3')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Fix results source — switch settler off The-Odds-API /scores</div>
+        <div class="task-sub">The /scores endpoint returned wrong data (Bielefeld 2-0, actual 1-1). Every bad result corrupts Brier score and hit rate. Switch to Football-Data.org free tier — reliable, no quota concerns for results only.</div>
+        <div class="task-tags"><span class="tag warn">corrupts metrics</span><span class="tag file">settler.js</span><span class="tag">football-data.org</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t4" onclick="toggle('t4')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">UI cleanup pass</div>
+        <div class="task-sub">Flags column too wide/cluttered. Lock icon flags showing text awkwardly. "Both teams low W% (14% / 2%)" looks odd. Tighten pill widths, cap flags column, clean up emoji stripping.</div>
+        <div class="task-tags"><span class="tag file">index.html</span><span class="tag">cosmetic</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t5" onclick="toggle('t5')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Update PROJECT-STATUS.md and README.md</div>
+        <div class="task-sub">Both still reference old BTTS model in places. Known issues list is outdated. README thresholds table shows old 30%/35% values.</div>
+        <div class="task-tags"><span class="tag file">PROJECT-STATUS.md</span><span class="tag file">README.md</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t6" onclick="toggle('t6')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Get 2 new Odds API keys before monthly reset</div>
+        <div class="task-sub">Down to 2 active keys (~300–490 remaining each). Create 2 new accounts at the-odds-api.com and add to docker-compose.yml. 5 mins.</div>
+        <div class="task-tags"><span class="tag warn">quota risk</span><span class="tag file">docker-compose.yml</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SOON ─────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="badge badge-amber">Soon</span>
+      <span class="section-title">Session 2 — Pre-kickoff snapshot + settler wiring</span>
+    </div>
+
+    <div class="task" id="t7" onclick="toggle('t7')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Wire pre-kickoff snapshot in settler.js</div>
+        <div class="task-sub">Three-snapshot system is designed (tip_time + pre_kickoff + closing). Tip_time and closing write correctly. Pre_kickoff fetch (25-35 mins before KO) using stored eventId is not wired yet.</div>
+        <div class="task-tags"><span class="tag file">settler.js</span><span class="tag">CLV data</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t8" onclick="toggle('t8')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Verify U2.5 odds settling correctly</div>
+        <div class="task-sub">Settler captures Over 2.5 closing odds. U2.5 direction matches also need the Under price captured at closing. history.js supports it — settler just needs the Under price extracted too.</div>
+        <div class="task-tags"><span class="tag file">settler.js</span><span class="tag">U2.5</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PHASE 2 ─────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="badge badge-blue">Phase 2</span>
+      <span class="section-title">Calibration — needs 200+ settled predictions first</span>
+    </div>
+
+    <div class="task" id="t9" onclick="toggle('t9')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Add calibration buckets to performance tab</div>
+        <div class="task-sub">Group predictions into probability buckets (50–55%, 55–60% etc) and compare predicted vs actual hit rate per bucket. The gap tells you which direction the model is miscalibrated.</div>
+        <div class="task-tags"><span class="tag file">history.js</span><span class="tag file">index.html</span><span class="tag">needs data</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t10" onclick="toggle('t10')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Probability weight tuning pass</div>
+        <div class="task-sub">Once calibration buckets reveal where the model over/underestimates, adjust weights in probability.js for O2.5 and U2.5 independently to minimise Brier score.</div>
+        <div class="task-tags"><span class="tag file">probability.js</span><span class="tag">needs data</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t11" onclick="toggle('t11')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">xG layer from FBref</div>
+        <div class="task-sub">Replace O2.5% weighted average with expected goals per team. Improves P(O2.5) accuracy substantially. Only build after baseline is validated — otherwise you won't know if xG actually helped.</div>
+        <div class="task-tags"><span class="tag">FBref</span><span class="tag">Poisson</span><span class="tag">not yet</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PHASE 3 ─────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="badge badge-green">Phase 3</span>
+      <span class="section-title">Later — after model is validated</span>
+    </div>
+
+    <div class="task" id="t12" onclick="toggle('t12')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">BTTS module + Betfair Exchange integration</div>
+        <div class="task-sub">BTTS needs xG layer first. Betfair account and dev app already registered. Build pre-match only (AU regulatory context). Phase 4 territory — don't build before baseline proves out.</div>
+        <div class="task-tags"><span class="tag">BTTS</span><span class="tag">Betfair</span><span class="tag">Phase 4</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="updated" id="updated-label">No changes saved yet.</div>
+</div>
+
+<script>
+const KEYS = ['t1','t2','t3','t4','t5','t6','t7','t8','t9','t10','t11','t12'];
+
+function load() {
+  KEYS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const checked = localStorage.getItem('gs-task-' + id) === '1';
+    const cb = el.querySelector('.checkbox');
+    if (checked) { cb.classList.add('checked'); el.classList.add('done'); }
+  });
+  update();
+}
+
+function toggle(id) {
+  const el = document.getElementById(id);
+  const cb = el.querySelector('.checkbox');
+  const isChecked = cb.classList.toggle('checked');
+  el.classList.toggle('done', isChecked);
+  localStorage.setItem('gs-task-' + id, isChecked ? '1' : '0');
+  update();
+}
+
+function update() {
+  const total = KEYS.length;
+  const done = KEYS.filter(id => localStorage.getItem('gs-task-' + id) === '1').length;
+  document.getElementById('prog-fill').style.width = (done / total * 100) + '%';
+  document.getElementById('prog-label').textContent = done + ' of ' + total + ' tasks done';
+  const now = new Date().toLocaleString('en-AU', { timeZone: 'Australia/Melbourne', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  document.getElementById('updated-label').textContent = 'Last updated: ' + now;
+}
+
+load();
+</script>
+</body>
+</html>

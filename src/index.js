@@ -1,18 +1,16 @@
 // src/index.js
 // ─────────────────────────────────────────────────────────────
 // GoalScout — main entry point.
-//
-// Starts Express server, mounts API routes, serves static UI,
-// and schedules automatic refresh via cron.
 // ─────────────────────────────────────────────────────────────
 
 const express = require('express');
-const path = require('path');
-const cron = require('node-cron');
-const apiRoutes = require('./api/routes');
-const { runFullRefresh } = require('./scrapers/orchestrator');
-const { runSettlement } = require('./engine/settler');
+const path    = require('path');
+const cron    = require('node-cron');
+
+const apiRoutes  = require('./api/routes');
+const { runFullRefresh, getRefreshState } = require('./scrapers/orchestrator');
 const { ensureDirs } = require('./utils/storage');
+const { fetchScoresAndSettle, fetchCurrentOddsForPending } = require('./engine/settler');
 const config = require('./config');
 
 const app = express();
@@ -20,34 +18,30 @@ const app = express();
 // ── Middleware ───────────────────────────────────────────────
 app.use(express.json());
 
-// ── API routes ──────────────────────────────────────────────
+// ── API routes ───────────────────────────────────────────────
 app.use('/api', apiRoutes);
 
-// ── Static frontend ─────────────────────────────────────────
+// ── Static frontend ──────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'public')));
-
-// Fallback to index.html for SPA-style routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-// ── Startup ─────────────────────────────────────────────────
+// ── Startup ──────────────────────────────────────────────────
 ensureDirs();
 
 app.listen(config.PORT, '0.0.0.0', () => {
   console.log(`
 ╔══════════════════════════════════════════════════╗
-║  GoalScout v1.0                                  ║
-║  Football Match Investigation Tool               ║
+║  GoalScout v2                                    ║
+║  Probability Engine                              ║
 ║                                                  ║
 ║  Dashboard: http://localhost:${config.PORT}              ║
 ║  API:       http://localhost:${config.PORT}/api/status   ║
-║                                                  ║
-║  Auto-refresh: ${config.CRON_SCHEDULE}                     ║
 ╚══════════════════════════════════════════════════╝
   `);
 
-  // Run initial refresh on startup (after a brief delay)
+  // Initial refresh on startup
   setTimeout(() => {
     console.log('[startup] triggering initial data refresh...');
     runFullRefresh().catch(err => {
@@ -56,31 +50,39 @@ app.listen(config.PORT, '0.0.0.0', () => {
   }, 2000);
 });
 
-// ── Cron scheduler ──────────────────────────────────────────
+// ── Main refresh cron (every 6 hours) ────────────────────────
 cron.schedule(config.CRON_SCHEDULE, () => {
-  console.log(`[cron] scheduled refresh at ${new Date().toISOString()}`);
-  runFullRefresh().catch(err => {
-    console.error('[cron] scheduled refresh failed:', err.message);
-  });
+  console.log(`[cron/refresh] scheduled at ${new Date().toISOString()}`);
+  runFullRefresh().catch(err => console.error('[cron/refresh] failed:', err.message));
 });
 
-// ── Settlement cron (every 2 hours) ─────────────────────────
-// Runs independently of the main refresh — fetches scores for
-// past matches and captures closing odds for upcoming ones.
-cron.schedule('0 */2 * * *', () => {
-  console.log(`[cron] settlement cycle at ${new Date().toISOString()}`);
-  runSettlement().catch(err => {
-    console.error('[cron] settlement failed:', err.message);
-  });
+// ── Pre-kickoff odds cron (every 30 minutes) ─────────────────
+// Fetches current odds for matches kicking off in next 2 hours.
+// Populates preKickoffOdds + preKickoffMovePct on predictions.
+cron.schedule(config.PREKICKOFF_CRON, async () => {
+  try {
+    const result = await fetchCurrentOddsForPending();
+    if (result.updated > 0) {
+      console.log(`[cron/pre-ko] updated pre-KO odds for ${result.updated} predictions`);
+    }
+  } catch (err) {
+    console.error('[cron/pre-ko] failed:', err.message);
+  }
 });
 
-// ── Graceful shutdown ───────────────────────────────────────
-process.on('SIGTERM', () => {
-  console.log('[shutdown] received SIGTERM, exiting...');
-  process.exit(0);
+// ── Settlement cron (every 3 hours) ──────────────────────────
+// Checks for completed matches and settles pending predictions.
+// Attaches closing odds, CLV%, and win/loss result.
+cron.schedule(config.SETTLE_CRON, async () => {
+  console.log(`[cron/settle] running at ${new Date().toISOString()}`);
+  try {
+    const result = await fetchScoresAndSettle();
+    console.log(`[cron/settle] settled=${result.settled} skipped=${result.skipped} errors=${result.errors}`);
+  } catch (err) {
+    console.error('[cron/settle] failed:', err.message);
+  }
 });
 
-process.on('SIGINT', () => {
-  console.log('[shutdown] received SIGINT, exiting...');
-  process.exit(0);
-});
+// ── Graceful shutdown ─────────────────────────────────────────
+process.on('SIGTERM', () => { console.log('[shutdown] SIGTERM'); process.exit(0); });
+process.on('SIGINT',  () => { console.log('[shutdown] SIGINT');  process.exit(0); });

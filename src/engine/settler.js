@@ -1,489 +1,285 @@
 // src/engine/settler.js
 // ─────────────────────────────────────────────────────────────
-// Result settler — finds completed matches and writes results.
+// Settlement engine.
 //
-// Runs on a schedule (every 2 hours via cron in index.js).
-// Does NOT touch predictions.jsonl — immutable once written.
-// Writes to results.jsonl only (append-only).
-// Captures closing odds snapshots before kickoff.
+// Responsibilities:
+//   1. Fetch match scores from The-Odds-API /scores
+//   2. Match scores to pending predictions by commence_time + teams
+//   3. Fetch current odds for CLV (closing line value) calculation
+//   4. Call settlePrediction() and updatePreKickoffOdds() in history.js
 //
-// Settlement flow:
-//   1. Read all predictions
-//   2. Read all existing results (build a settled-fixture Set)
-//   3. Find predictions past kickoff with no result yet
-//   4. Group those by sport key, fetch scores from Odds API
-//   5. Match scores back to fixtures via team name normalisation
-//   6. Write result records
-//   7. Capture closing odds for fixtures 30–90 mins from kickoff
-//
-// Fixture matching strategy:
-//   - Primary:   commenceTime + normalised team names (most reliable)
-//   - Fallback:  predictionDate + SoccerSTATS kickoff + leagueSlug
-//     (for predictions where odds API didn't match at prediction time)
-//
-// Match status values written to results.jsonl:
-//   'completed'  — full time score confirmed
-//   'postponed'  — API returned postponed status
-//   'cancelled'  — API returned cancelled/abandoned before KO
-//   'abandoned'  — API returned abandoned mid-match
-//   'unknown'    — kickoff was >24h ago, no result found anywhere
-//
-// Only 'completed' results are used in performance metrics.
-// All others are treated as void.
+// The-Odds-API /scores returns results for completed matches.
+// We use the 'daysFrom' parameter to look back up to 3 days.
 // ─────────────────────────────────────────────────────────────
 
-const { fetch } = require('undici');
 const config = require('../config');
-const { logResult, readJSONL } = require('./history');
-const { normalise, SLUG_TO_ODDS_MAP } = require('../odds/the-odds-api');
+const { readJSONL } = require('../engine/history');
+const { settlePrediction, updatePreKickoffOdds } = require('../engine/history');
 
-// ── Constants ────────────────────────────────────────────────
+// ── Odds API request helper ───────────────────────────────────
 
-// How long after kickoff before we attempt settlement (mins)
-const SETTLE_AFTER_MINS = 120;
-
-// How long before giving up and marking unknown (hours)
-const ABANDON_AFTER_HOURS = 72;
-
-// Window before kickoff to capture closing odds (mins)
-const CLOSING_ODDS_WINDOW_MINS_MIN = 30;
-const CLOSING_ODDS_WINDOW_MINS_MAX = 90;
-
-// ── API key rotation (shared state, separate from main app) ──
-let keyIndex = 0;
-function getApiKey() {
+async function oddsApiRequest(path, params = {}) {
   const keys = config.ODDS_API_KEYS;
-  if (!keys || keys.length === 0) return null;
-  const key = keys[keyIndex % keys.length];
-  keyIndex++;
-  return key;
-}
+  if (!keys || keys.length === 0) {
+    console.warn('[settler] no ODDS_API_KEYS configured');
+    return null;
+  }
 
-// ── Fetch scores from The-Odds-API ───────────────────────────
-
-/**
- * Fetch completed scores for a sport key.
- * The-Odds-API /scores endpoint returns recent completed events.
- * daysFrom=1 returns events from the last 1 day.
- */
-async function fetchScoresForSport(sportKey, daysFrom = 2) {
-  const key = getApiKey();
-  if (!key) return null;
-
-  const url = new URL(`https://api.the-odds-api.com/v4/sports/${sportKey}/scores`);
-  url.searchParams.set('apiKey', key);
-  url.searchParams.set('daysFrom', String(daysFrom));
+  const qs = new URLSearchParams(params).toString();
+  const url = `https://api.the-odds-api.com${path}?apiKey=${keys[0]}${qs ? '&' + qs : ''}`;
 
   try {
-    const res = await fetch(url.toString(), {
-      signal: AbortSignal.timeout(15000),
-    });
-
-    const remaining = res.headers.get('x-requests-remaining');
-    if (remaining) {
-      console.log(`[settler] scores API quota: ${remaining} remaining (key ...${key.slice(-6)})`);
-    }
-
-    if (!res.ok) {
-      const body = await res.text();
-      console.warn(`[settler] scores API ${res.status} for ${sportKey}: ${body.substring(0, 150)}`);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) {
+      console.warn(`[settler] odds API ${path} returned ${resp.status}`);
       return null;
     }
-
-    const data = await res.json();
-    return Array.isArray(data) ? data : null;
+    return await resp.json();
   } catch (err) {
-    console.warn(`[settler] scores request failed for ${sportKey}:`, err.message);
+    console.warn(`[settler] odds API request failed: ${err.message}`);
     return null;
   }
 }
 
-/**
- * Fetch pre-match odds for a sport key (for closing odds capture).
- */
-async function fetchCurrentOddsForSport(sportKey) {
-  const key = getApiKey();
-  if (!key) return null;
+// ── Team name normalisation ───────────────────────────────────
 
-  const url = new URL(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds`);
-  url.searchParams.set('apiKey', key);
-  url.searchParams.set('regions', config.ODDS_REGIONS);
-  url.searchParams.set('markets', 'totals');
-  url.searchParams.set('oddsFormat', 'decimal');
-
-  try {
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15000) });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return Array.isArray(data) ? data : null;
-  } catch (err) {
-    console.warn(`[settler] current odds request failed for ${sportKey}:`, err.message);
-    return null;
-  }
+function normalise(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-// ── Match score events to predictions ────────────────────────
-
-/**
- * Try to match a score event (from Odds API) to a prediction.
- * Returns true if this event matches the given prediction's fixture.
- */
-function isMatchForPrediction(event, prediction) {
-  const eHome = normalise(event.home_team || '');
-  const eAway = normalise(event.away_team || '');
-  const pHome = normalise(prediction.homeTeam || '');
-  const pAway = normalise(prediction.awayTeam || '');
-
-  // Strategy 1: normalised name exact match
-  if (eHome === pHome && eAway === pAway) return true;
-
-  // Strategy 2: substring match (handles "Man Utd" vs "Manchester United")
-  if (
-    (eHome.includes(pHome) || pHome.includes(eHome)) &&
-    (eAway.includes(pAway) || pAway.includes(eAway))
-  ) return true;
-
-  // Strategy 3: commenceTime match if both have it (most reliable)
-  if (prediction.commenceTime && event.commence_time) {
-    if (prediction.commenceTime === event.commence_time) return true;
-  }
-
-  // Strategy 4: first-6-chars match (handles suffix differences)
-  const h1 = pHome.substring(0, 6);
-  const a1 = pAway.substring(0, 6);
-  if (h1.length >= 4 && a1.length >= 4) {
-    if (eHome.startsWith(h1) && eAway.startsWith(a1)) return true;
-  }
-
-  return false;
+function teamsMatch(apiHome, apiAway, predHome, predAway) {
+  const ah = normalise(apiHome), aa = normalise(apiAway);
+  const ph = normalise(predHome), pa = normalise(predAway);
+  // Full match or one side contains the other
+  const homeOk = ah === ph || ah.includes(ph) || ph.includes(ah);
+  const awayOk = aa === pa || aa.includes(pa) || pa.includes(aa);
+  return homeOk && awayOk;
 }
 
-/**
- * Extract score from an Odds API scores event.
- * Returns null if the match is not completed.
- */
-function extractScore(event) {
-  if (!event.completed) return null;
-
-  const scores = event.scores;
-  if (!scores || !Array.isArray(scores)) return null;
-
-  let homeGoals = null;
-  let awayGoals = null;
-
-  for (const s of scores) {
-    if (s.name === event.home_team) homeGoals = parseInt(s.score, 10);
-    if (s.name === event.away_team) awayGoals = parseInt(s.score, 10);
-  }
-
-  // Some events use 'home'/'away' as name instead of team name
-  if (homeGoals === null || awayGoals === null) {
-    for (const s of scores) {
-      const name = (s.name || '').toLowerCase();
-      if (name === 'home') homeGoals = parseInt(s.score, 10);
-      if (name === 'away') awayGoals = parseInt(s.score, 10);
-    }
-  }
-
-  if (homeGoals === null || awayGoals === null || isNaN(homeGoals) || isNaN(awayGoals)) {
-    return null;
-  }
-
-  return { homeGoals, awayGoals };
-}
-
-// ── Build estimated UTC kickoff from prediction fields ────────
+// ── Fetch scores and settle ───────────────────────────────────
 
 /**
- * For predictions that missed odds matching (commenceTime is null),
- * estimate a UTC kickoff from predictionDate + kickoff time (AEST).
- *
- * Key edge case: early-morning AEST times (00:00-09:59) cross midnight
- * backwards into the previous UTC day when attached to predictionDate.
- * e.g. predictionDate=2026-04-18, kickoff=01:00 AEST
- *      naive parse -> 2026-04-17T15:00Z (one day early, wrong)
- *      actual match -> 2026-04-18T15:00Z (Apr 19 01:00 AEST)
- *
- * Fix: if estimated kickoff is before predictionTimestamp (impossible),
- * add one day.
+ * Main settlement function.
+ * Fetches scores for all sports that have pending predictions,
+ * matches them to predictions, and writes results.
  */
-function estimateKickoffUTC(prediction) {
-  if (prediction.commenceTime) return new Date(prediction.commenceTime);
-
-  if (!prediction.predictionDate || !prediction.kickoff) return null;
-
-  try {
-    const [hh, mm] = prediction.kickoff.split(':').map(Number);
-    let kickoff = new Date(`${prediction.predictionDate}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00+10:00`);
-
-    if (isNaN(kickoff.getTime())) return null;
-
-    // If estimated kickoff predates when prediction was made, add one day
-    const predMadeAt = prediction.predictionTimestamp
-      ? new Date(prediction.predictionTimestamp)
-      : new Date(`${prediction.predictionDate}T00:00:00Z`);
-
-    if (kickoff < predMadeAt) {
-      kickoff = new Date(kickoff.getTime() + 24 * 60 * 60 * 1000);
-    }
-
-    return kickoff;
-  } catch {
-    return null;
-  }
-}
-
-// ── Core settler logic ────────────────────────────────────────
-
-/**
- * Run a full settlement cycle.
- *
- * Returns a summary of what was settled.
- */
-async function runSettlement() {
-  console.log('[settler] starting settlement cycle...');
-
-  if (config.ODDS_API_KEYS.length === 0) {
-    console.warn('[settler] no API keys configured — cannot fetch scores');
-    return { settled: 0, closingOdds: 0, skipped: 0, errors: 0 };
-  }
-
+async function fetchScoresAndSettle() {
   const predictions = readJSONL(config.PREDICTIONS_FILE);
-  const existingResults = readJSONL(config.RESULTS_FILE);
-  const closingSnapshots = readJSONL(config.CLOSING_ODDS_FILE);
+  const pending = predictions.filter(p => p.status === 'pending');
 
-  if (predictions.length === 0) {
-    console.log('[settler] no predictions found, nothing to settle');
-    return { settled: 0, closingOdds: 0, skipped: 0, errors: 0 };
+  if (pending.length === 0) {
+    return { settled: 0, skipped: 0, errors: 0 };
   }
 
-  // Build sets of what we already have
-  const settledFixtures = new Set(existingResults.map(r => r.fixtureId));
-  const closingCaptured = new Set(closingSnapshots.map(s => `${s.fixtureId}__${s.market}`));
+  console.log(`[settler] ${pending.length} pending predictions to check`);
 
-  const now = new Date();
-  const stats = { settled: 0, closingOdds: 0, skipped: 0, errors: 0 };
+  // Get unique sport keys from pending predictions via leagueSlug
+  // We need to map league slugs to odds-api sport keys
+  // Use the same mapping as the-odds-api.js
+  const { mapLeagueSlugToSportKey } = require('../odds/the-odds-api');
 
-  // ── Identify fixtures needing attention ─────────────────────
-
-  // De-duplicate predictions to one record per fixture (keep the richest)
-  const fixtureMap = new Map(); // fixtureId → best prediction record
-  for (const p of predictions) {
-    const existing = fixtureMap.get(p.fixtureId);
-    // Prefer records with commenceTime and marketOdds
-    if (!existing || (!existing.commenceTime && p.commenceTime)) {
-      fixtureMap.set(p.fixtureId, p);
-    }
+  // Collect all sport keys we need scores for
+  const sportKeys = new Set();
+  for (const p of pending) {
+    const key = mapLeagueSlugToSportKey ? mapLeagueSlugToSportKey(p.leagueSlug) : null;
+    if (key) sportKeys.add(key);
   }
 
-  // Categorise fixtures
-  const toSettle = [];       // need result fetched
-  const forClosingOdds = []; // kickoff coming up, capture closing odds
+  // Also try a broad soccer scores fetch if we can't map all
+  // The-Odds-API supports fetching scores for all soccer events at once
+  const allScores = [];
 
-  for (const [fixtureId, pred] of fixtureMap) {
-    const kickoff = estimateKickoffUTC(pred);
-    if (!kickoff) {
-      console.warn(`[settler] can't determine kickoff for ${fixtureId}, skipping`);
-      stats.skipped++;
-      continue;
-    }
-
-    const minsFromKickoff = (now - kickoff) / 60000;
-    const hoursFromKickoff = minsFromKickoff / 60;
-
-    if (settledFixtures.has(fixtureId)) {
-      // Already settled — check if we still need closing odds (pre-kickoff capture)
-      // (unlikely but handle it)
-      continue;
-    }
-
-    if (minsFromKickoff > SETTLE_AFTER_MINS) {
-      // Match should be finished — try to settle
-      if (hoursFromKickoff > ABANDON_AFTER_HOURS) {
-        // Too long ago — mark as unknown and move on
-        console.log(`[settler] ${fixtureId} is ${Math.round(hoursFromKickoff)}h old with no result — marking unknown`);
-        logResult(fixtureId, {
-          homeGoals: null,
-          awayGoals: null,
-          matchStatus: 'unknown',
-          source: 'settler-timeout',
-        });
-        settledFixtures.add(fixtureId);
-        stats.settled++;
-      } else {
-        toSettle.push({ fixtureId, pred, kickoff });
-      }
-    } else if (
-      minsFromKickoff > -CLOSING_ODDS_WINDOW_MINS_MAX &&
-      minsFromKickoff < -CLOSING_ODDS_WINDOW_MINS_MIN
-    ) {
-      // In the closing odds capture window (30–90 mins before kickoff)
-      forClosingOdds.push({ fixtureId, pred });
+  // Try fetching scores per sport key (more targeted, uses fewer API credits)
+  for (const sportKey of sportKeys) {
+    const scores = await oddsApiRequest(`/v4/sports/${sportKey}/scores`, {
+      daysFrom: 3,
+    });
+    if (scores && Array.isArray(scores)) {
+      allScores.push(...scores);
     }
   }
 
-  console.log(`[settler] ${toSettle.length} fixtures to settle, ${forClosingOdds.length} need closing odds`);
-
-  // ── Fetch scores for fixtures needing settlement ─────────────
-
-  if (toSettle.length > 0) {
-    // Group by sport key to minimise API calls
-    const bySportKey = new Map();
-    for (const item of toSettle) {
-      const sportKey = SLUG_TO_ODDS_MAP[item.pred.leagueSlug];
-      if (!sportKey) {
-        console.warn(`[settler] no sport key for slug ${item.pred.leagueSlug} (${item.fixtureId})`);
-        stats.skipped++;
-        continue;
-      }
-      if (!bySportKey.has(sportKey)) bySportKey.set(sportKey, []);
-      bySportKey.get(sportKey).push(item);
+  // If we got no scores via sport keys (mapping failed), try main soccer leagues
+  if (allScores.length === 0) {
+    console.log('[settler] sport key mapping returned no scores, trying broad fetch');
+    const mainLeagues = [
+      'soccer_epl', 'soccer_germany_bundesliga', 'soccer_italy_serie_a',
+      'soccer_spain_la_liga', 'soccer_france_ligue_one', 'soccer_turkey_super_league',
+      'soccer_denmark_superliga', 'soccer_south_korea_kleague1',
+      'soccer_argentina_primera_division',
+    ];
+    for (const key of mainLeagues) {
+      const scores = await oddsApiRequest(`/v4/sports/${key}/scores`, { daysFrom: 3 });
+      if (scores && Array.isArray(scores)) allScores.push(...scores);
+      // Small delay to avoid rate limiting
+      await new Promise(r => setTimeout(r, 200));
     }
+  }
 
-    for (const [sportKey, items] of bySportKey) {
-      console.log(`[settler] fetching scores for ${sportKey} (${items.length} fixtures)...`);
+  console.log(`[settler] fetched ${allScores.length} score records from API`);
 
-      const scores = await fetchScoresForSport(sportKey, 3); // last 3 days
-      if (!scores) {
-        console.warn(`[settler] no scores returned for ${sportKey}`);
-        stats.errors++;
+  let settled = 0, skipped = 0, errors = 0;
+
+  for (const p of pending) {
+    try {
+      // Find matching event in scores
+      const match = allScores.find(s => {
+        if (!s.completed) return false; // only settle completed matches
+        return teamsMatch(s.home_team, s.away_team, p.homeTeam, p.awayTeam);
+      });
+
+      if (!match) {
+        skipped++;
         continue;
       }
 
-      console.log(`[settler] got ${scores.length} score events for ${sportKey}`);
+      // Extract final score
+      const homeScore = match.scores?.find(s => s.name === match.home_team);
+      const awayScore = match.scores?.find(s => s.name === match.away_team);
+      const homeGoals = homeScore ? parseInt(homeScore.score) : null;
+      const awayGoals = awayScore ? parseInt(awayScore.score) : null;
 
-      for (const item of items) {
-        if (settledFixtures.has(item.fixtureId)) continue;
-
-        // Find the matching score event
-        const event = scores.find(e => isMatchForPrediction(e, item.pred));
-
-        if (!event) {
-          console.log(`[settler] no score event found for ${item.fixtureId} (${item.pred.homeTeam} vs ${item.pred.awayTeam})`);
-          // Don't mark unknown yet — might still be playing or API lag
-          stats.skipped++;
-          continue;
-        }
-
-        // Check event status
-        if (!event.completed) {
-          const status = (event.status || '').toLowerCase();
-          if (status.includes('postponed')) {
-            logResult(item.fixtureId, { homeGoals: null, awayGoals: null, matchStatus: 'postponed', source: 'odds-api' });
-            settledFixtures.add(item.fixtureId);
-            stats.settled++;
-            console.log(`[settler] ${item.fixtureId} → postponed`);
-          } else if (status.includes('cancel')) {
-            logResult(item.fixtureId, { homeGoals: null, awayGoals: null, matchStatus: 'cancelled', source: 'odds-api' });
-            settledFixtures.add(item.fixtureId);
-            stats.settled++;
-            console.log(`[settler] ${item.fixtureId} → cancelled`);
-          } else {
-            console.log(`[settler] ${item.fixtureId} not yet completed (status: ${event.status || 'unknown'})`);
-            stats.skipped++;
-          }
-          continue;
-        }
-
-        const score = extractScore(event);
-        if (!score) {
-          console.warn(`[settler] completed event but couldn't extract score for ${item.fixtureId}`);
-          stats.errors++;
-          continue;
-        }
-
-        logResult(item.fixtureId, {
-          homeGoals: score.homeGoals,
-          awayGoals: score.awayGoals,
-          matchStatus: 'completed',
-          source: 'odds-api',
-        });
-        settledFixtures.add(item.fixtureId);
-        stats.settled++;
-        console.log(`[settler] ✓ ${item.fixtureId} → ${score.homeGoals}–${score.awayGoals}`);
+      if (homeGoals == null || awayGoals == null) {
+        skipped++;
+        continue;
       }
 
-      // Small delay between sport key fetches to be kind to the API
-      await sleep(500);
-    }
-  }
-
-  // ── Capture closing odds ──────────────────────────────────────
-
-  if (forClosingOdds.length > 0) {
-    const bySportKey = new Map();
-    for (const item of forClosingOdds) {
-      const sportKey = SLUG_TO_ODDS_MAP[item.pred.leagueSlug];
-      if (!sportKey) continue;
-      if (!bySportKey.has(sportKey)) bySportKey.set(sportKey, []);
-      bySportKey.get(sportKey).push(item);
-    }
-
-    for (const [sportKey, items] of bySportKey) {
-      const odds = await fetchCurrentOddsForSport(sportKey);
-      if (!odds) continue;
-
-      for (const item of items) {
-        // Find matching event
-        const event = odds.find(e => isMatchForPrediction(e, item.pred));
-        if (!event) continue;
-
-        // Extract O2.5 closing odds
-        let bestO25 = null;
-        for (const bm of (event.bookmakers || [])) {
-          for (const mkt of (bm.markets || [])) {
-            if (mkt.key === 'totals') {
-              const over = (mkt.outcomes || []).find(o => o.name === 'Over' && o.point === 2.5);
-              if (over && (!bestO25 || over.price > bestO25.price)) {
-                bestO25 = { price: over.price, bookmaker: bm.title };
+      // Try to get closing odds for CLV calculation
+      // Use the last available odds before the match completed
+      let closingOdds = null;
+      if (p.leagueSlug) {
+        const sportKey = mapLeagueSlugToSportKey ? mapLeagueSlugToSportKey(p.leagueSlug) : null;
+        if (sportKey) {
+          const oddsData = await oddsApiRequest(`/v4/sports/${sportKey}/odds`, {
+            regions: 'uk',
+            markets: 'totals',
+            oddsFormat: 'decimal',
+          });
+          if (oddsData && Array.isArray(oddsData)) {
+            const event = oddsData.find(e =>
+              teamsMatch(e.home_team, e.away_team, p.homeTeam, p.awayTeam)
+            );
+            if (event) {
+              // Find the over/under 2.5 line from Pinnacle or best sharp book
+              for (const bk of event.bookmakers || []) {
+                const market = bk.markets?.find(m => m.key === 'totals');
+                if (!market) continue;
+                const selection = p.market === 'over_2.5'
+                  ? market.outcomes?.find(o => o.name === 'Over'  && parseFloat(o.point) === 2.5)
+                  : market.outcomes?.find(o => o.name === 'Under' && parseFloat(o.point) === 2.5);
+                if (selection) {
+                  closingOdds = selection.price;
+                  break;
+                }
               }
             }
           }
         }
-
-        if (bestO25) {
-          const snapKey = `${item.fixtureId}__over_2.5`;
-          if (!closingCaptured.has(snapKey)) {
-            logClosingOdds(item.fixtureId, 'over_2.5', bestO25.price, bestO25.bookmaker);
-            closingCaptured.add(snapKey);
-            stats.closingOdds++;
-            console.log(`[settler] closing odds for ${item.fixtureId} O2.5: ${bestO25.price} (${bestO25.bookmaker})`);
-          }
-        }
       }
 
-      await sleep(500);
+      const wasSettled = settlePrediction(p.fixtureId, p.market, {
+        homeGoals,
+        awayGoals,
+        closingOdds,
+      });
+
+      if (wasSettled) {
+        settled++;
+        console.log(`[settler] settled ${p.homeTeam} vs ${p.awayTeam} (${p.market}): ${homeGoals}-${awayGoals}`);
+      } else {
+        skipped++;
+      }
+
+    } catch (err) {
+      console.error(`[settler] error settling ${p.homeTeam} vs ${p.awayTeam}:`, err.message);
+      errors++;
     }
   }
 
-  console.log(`[settler] done. settled=${stats.settled}, closingOdds=${stats.closingOdds}, skipped=${stats.skipped}, errors=${stats.errors}`);
-  return stats;
+  console.log(`[settler] done. settled=${settled} skipped=${skipped} errors=${errors}`);
+  return { settled, skipped, errors };
 }
 
-// ── Closing odds logging ──────────────────────────────────────
+// ── Pre-kickoff odds update ───────────────────────────────────
 
-const fs = require('fs');
+/**
+ * Fetch current odds for all pending predictions and store as pre-KO odds.
+ * This should be called ~60-90 minutes before kickoff.
+ * In practice, call it from a cron or manually via POST /api/pre-kickoff.
+ */
+async function fetchCurrentOddsForPending() {
+  const predictions = readJSONL(config.PREDICTIONS_FILE);
 
-function logClosingOdds(fixtureId, market, price, bookmaker) {
-  const dir = config.HISTORY_DIR;
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  // Only update predictions that:
+  // - are still pending
+  // - don't already have pre-KO odds
+  // - have a commenceTime within the next 120 minutes OR already past
+  const now = Date.now();
+  const window = 2 * 60 * 60 * 1000; // 2 hours
 
-  const line = JSON.stringify({
-    fixtureId,
-    market,
-    capturedAt: new Date().toISOString(),
-    snapshotType: 'closing',
-    decimalOdds: price,
-    bookmaker,
-  }) + '\n';
+  const toUpdate = predictions.filter(p => {
+    if (p.status !== 'pending') return false;
+    if (p.preKickoffOdds != null) return false;
+    if (!p.commenceTime) return false;
+    const ko = new Date(p.commenceTime).getTime();
+    return ko - now <= window; // within 2 hours of kickoff
+  });
 
-  fs.appendFileSync(config.CLOSING_ODDS_FILE, line, 'utf8');
+  if (toUpdate.length === 0) {
+    return { updated: 0 };
+  }
+
+  console.log(`[settler] fetching pre-KO odds for ${toUpdate.length} predictions`);
+
+  const { mapLeagueSlugToSportKey } = require('../odds/the-odds-api');
+  let updated = 0;
+
+  for (const p of toUpdate) {
+    try {
+      const sportKey = mapLeagueSlugToSportKey ? mapLeagueSlugToSportKey(p.leagueSlug) : null;
+      if (!sportKey) continue;
+
+      const oddsData = await oddsApiRequest(`/v4/sports/${sportKey}/odds`, {
+        regions: 'uk,au',
+        markets: 'totals',
+        oddsFormat: 'decimal',
+      });
+
+      if (!oddsData || !Array.isArray(oddsData)) continue;
+
+      const event = oddsData.find(e =>
+        teamsMatch(e.home_team, e.away_team, p.homeTeam, p.awayTeam)
+      );
+
+      if (!event) continue;
+
+      let currentPrice = null;
+      for (const bk of event.bookmakers || []) {
+        const market = bk.markets?.find(m => m.key === 'totals');
+        if (!market) continue;
+        const selection = p.market === 'over_2.5'
+          ? market.outcomes?.find(o => o.name === 'Over'  && parseFloat(o.point) === 2.5)
+          : market.outcomes?.find(o => o.name === 'Under' && parseFloat(o.point) === 2.5);
+        if (selection) { currentPrice = selection.price; break; }
+      }
+
+      if (currentPrice == null) continue;
+
+      const wasUpdated = updatePreKickoffOdds(p.fixtureId, p.market, currentPrice);
+      if (wasUpdated) updated++;
+
+      await new Promise(r => setTimeout(r, 300));
+
+    } catch (err) {
+      console.warn(`[settler] pre-KO odds fetch failed for ${p.homeTeam} vs ${p.awayTeam}:`, err.message);
+    }
+  }
+
+  return { updated };
 }
 
-// ── Utility ───────────────────────────────────────────────────
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-module.exports = { runSettlement };
+module.exports = { fetchScoresAndSettle, fetchCurrentOddsForPending };

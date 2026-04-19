@@ -1,41 +1,17 @@
 // src/engine/history.js
 // ─────────────────────────────────────────────────────────────
-// Historical prediction logger and performance evaluator.
-//
-// Files managed (all JSONL, append-only, never overwritten):
-//   predictions.jsonl  — one record per match
-//                        market = 'over_2.5' or 'under_2.5'
-//                        based on the match's direction field
-//   results.jsonl      — one record per settled fixture
-//   closing-odds.jsonl — price snapshots (tip_time, pre_kickoff, closing)
-//
-// ── Dedup logic ────────────────────────────────────────────
-// A prediction is skipped if fixtureId already exists WITH
-// marketOdds populated (complete record). If first write had
-// null odds (matching failure), one re-write is allowed when
-// odds become available on the next cycle.
-//
-// At read time, per fixtureId, prefer the record with
-// marketOdds populated; among equals keep most recent.
-//
-// ── Three odds snapshots ───────────────────────────────────
-// closing-odds.jsonl stores all three price points per match:
-//   snapshotType: 'tip_time'    → at shortlist time
-//   snapshotType: 'pre_kickoff' → 25-35 mins before kickoff
-//   snapshotType: 'closing'     → as close to KO as possible
-//
-// Price movement tip_time → pre_kickoff tracks lineup impact.
-// CLV is measured tip_time → closing.
+// Historical prediction logger + stats engine.
+// Backwards compatible: handles both old records (no status field,
+// settlement tracked in results.jsonl) and new records (status inline).
 // ─────────────────────────────────────────────────────────────
 
-const fs = require('fs');
+const fs     = require('fs');
 const config = require('../config');
 
-// ── File helpers ─────────────────────────────────────────────
-
 function ensureHistoryDir() {
-  const dir = config.HISTORY_DIR;
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(config.HISTORY_DIR)) {
+    fs.mkdirSync(config.HISTORY_DIR, { recursive: true });
+  }
 }
 
 function appendJSONL(filePath, obj) {
@@ -45,396 +21,254 @@ function appendJSONL(filePath, obj) {
 
 function readJSONL(filePath) {
   try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    return content
+    return fs.readFileSync(filePath, 'utf8')
       .split('\n')
       .filter(l => l.trim())
       .map(l => { try { return JSON.parse(l); } catch { return null; } })
       .filter(Boolean);
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 // ── Prediction logging ────────────────────────────────────────
 
-/**
- * Log a prediction for a shortlisted match.
- *
- * One record per match — market is 'over_2.5' or 'under_2.5'
- * based on match.direction (set by shortlist.js).
- *
- * Also writes a tip_time snapshot to closing-odds.jsonl so
- * CLV can be calculated later against pre_kickoff and closing.
- */
 function logPrediction(match, analysis) {
-  const today = new Date().toISOString().slice(0, 10);
-  const fixtureId = match.id;
-  const direction = match.direction || 'o25';
-  const market = direction === 'u25' ? 'under_2.5' : 'over_2.5';
-  const marketAnalysis = direction === 'u25' ? analysis.u25 : analysis.o25;
-
+  const today    = new Date().toISOString().slice(0, 10);
   const existing = readJSONL(config.PREDICTIONS_FILE);
+  if (existing.some(p => p.fixtureId === match.id && p.predictionDate === today)) return;
 
-  // Skip if already logged WITH odds — immutable once complete
-  const alreadyComplete = existing.some(
-    p => p.fixtureId === fixtureId && p.marketOdds != null
-  );
-  if (alreadyComplete) return;
-
-  const hasOdds = marketAnalysis.marketOdds != null;
-
-  const record = {
-    fixtureId,
-    predictionDate: today,
+  const base = {
+    fixtureId:           match.id,
+    predictionDate:      today,
     predictionTimestamp: new Date().toISOString(),
-    modelVersion: analysis.modelVersion,
-    league: match.league,
-    leagueSlug: match.leagueSlug,
-    homeTeam: match.homeTeam,
-    awayTeam: match.awayTeam,
-    kickoff: match.kickoff,
-    day: match.day,
-    commenceTime: match.odds?.commenceTime || null,
-    eventId: match.odds?.eventId || null,
-    market,
-    selection: direction === 'u25' ? 'under' : 'over',
-    direction,
-    modelProbability: marketAnalysis.probability,
-    fairOdds: marketAnalysis.fairOdds,
-    marketOdds: marketAnalysis.marketOdds,
-    bookmaker: marketAnalysis.bookmaker,
-    bookmakerKey: marketAnalysis.bookmakerKey || null,
-    oddsSnapshotAt: hasOdds ? new Date().toISOString() : null,
-    edge: marketAnalysis.edge,
-    inputs: direction === 'u25' ? {
-      homeCSpct: match.home?.csPct,
-      awayCSpct: match.away?.csPct,
-      homeFTSpct: match.home?.ftsPct,
-      awayFTSpct: match.away?.ftsPct,
-      homeO25pct: match.home?.o25pct,
-      awayO25pct: match.away?.o25pct,
-      score: match.score,
-      grade: match.grade,
-    } : {
-      homeO25pct: match.home?.o25pct,
-      awayO25pct: match.away?.o25pct,
-      homeAvgTG: match.home?.avgTG,
-      awayAvgTG: match.away?.avgTG,
-      score: match.score,
-      grade: match.grade,
-    },
+    modelVersion:        analysis.modelVersion,
+    league:              match.league,
+    leagueSlug:          match.leagueSlug,
+    homeTeam:            match.homeTeam,
+    awayTeam:            match.awayTeam,
+    kickoff:             match.kickoff,
+    day:                 match.day,
+    commenceTime:        match.odds?.commenceTime || null,
+    grade:               match.grade   || null,
+    direction:           match.direction || null,
   };
 
-  appendJSONL(config.PREDICTIONS_FILE, record);
+  if (analysis.o25?.probability != null) {
+    appendJSONL(config.PREDICTIONS_FILE, {
+      ...base,
+      market:            'over_2.5',
+      selection:         'over',
+      modelProbability:  analysis.o25.probability,
+      fairOdds:          analysis.o25.fairOdds,
+      marketOdds:        analysis.o25.marketOdds,
+      bookmaker:         analysis.o25.bookmaker,
+      edge:              analysis.o25.edge,
+      preKickoffOdds:    null,
+      preKickoffMovePct: null,
+      closingOdds:       null,
+      clvPct:            null,
+      status:            'pending',
+      result:            null,
+      settledAt:         null,
+      inputs: {
+        homeO25pct: match.home?.o25pct,
+        awayO25pct: match.away?.o25pct,
+        homeAvgTG:  match.home?.avgTG,
+        awayAvgTG:  match.away?.avgTG,
+        flagScore:  match.score,
+        grade:      match.grade,
+      },
+    });
+  }
 
-  // Write tip_time snapshot to closing-odds.jsonl so CLV can
-  // be measured later against pre_kickoff and closing snapshots
-  if (hasOdds) {
-    logOddsSnapshot(
-      fixtureId,
-      market,
-      marketAnalysis.marketOdds,
-      marketAnalysis.bookmaker,
-      'tip_time'
-    );
+  if (analysis.btts?.probability != null) {
+    appendJSONL(config.PREDICTIONS_FILE, {
+      ...base,
+      market:            'btts',
+      selection:         'yes',
+      modelProbability:  analysis.btts.probability,
+      fairOdds:          analysis.btts.fairOdds,
+      marketOdds:        analysis.btts.marketOdds,
+      bookmaker:         analysis.btts.bookmaker,
+      edge:              analysis.btts.edge,
+      preKickoffOdds:    null,
+      preKickoffMovePct: null,
+      closingOdds:       null,
+      clvPct:            null,
+      status:            'pending',
+      result:            null,
+      settledAt:         null,
+      inputs: {
+        homeBTSpct: match.home?.btsPct,
+        awayBTSpct: match.away?.btsPct,
+        homeFTSpct: match.home?.ftsPct,
+        awayFTSpct: match.away?.ftsPct,
+        homeCSpct:  match.home?.csPct,
+        awayCSpct:  match.away?.csPct,
+        flagScore:  match.score,
+        grade:      match.grade,
+      },
+    });
   }
 }
 
-// ── Result logging ────────────────────────────────────────────
+// ── Pre-kickoff + settle ──────────────────────────────────────
 
-/**
- * Log a match result.
- *
- * matchStatus values:
- *   'completed'  — full-time score confirmed, used in metrics
- *   'postponed'  — treated as void
- *   'cancelled'  — treated as void
- *   'abandoned'  — treated as void
- *   'unknown'    — >72h with no result, treated as void
- */
-function logResult(fixtureId, result) {
-  const status = result.matchStatus || 'completed';
-  const isCompleted = status === 'completed';
-
-  appendJSONL(config.RESULTS_FILE, {
-    fixtureId,
-    settledAt: new Date().toISOString(),
-    matchStatus: status,
-    source: result.source || 'manual',
-    fullTimeHome: isCompleted ? result.homeGoals : null,
-    fullTimeAway: isCompleted ? result.awayGoals : null,
-    totalGoals: isCompleted ? result.homeGoals + result.awayGoals : null,
-    over25: isCompleted ? (result.homeGoals + result.awayGoals) > 2.5 : null,
-    under25: isCompleted ? (result.homeGoals + result.awayGoals) < 2.5 : null,
-    // exactly 2.5 is impossible in football, but guard against it
-    push: isCompleted ? (result.homeGoals + result.awayGoals) === 2.5 : null,
-    halfTimeHome: result.htHome ?? null,
-    halfTimeAway: result.htAway ?? null,
-  });
-}
-
-// ── Odds snapshot logging ────────────────────────────────────
-
-/**
- * Log an odds snapshot.
- * snapshotType: 'tip_time' | 'pre_kickoff' | 'closing'
- *
- * tip_time is written by logPrediction automatically.
- * pre_kickoff and closing are written by settler.js.
- */
-function logOddsSnapshot(fixtureId, market, price, bookmaker, snapshotType) {
-  ensureHistoryDir();
-  appendJSONL(config.CLOSING_ODDS_FILE, {
-    fixtureId,
-    market,
-    capturedAt: new Date().toISOString(),
-    snapshotType,
-    decimalOdds: price,
-    bookmaker,
-  });
-}
-
-// ── Performance evaluation ────────────────────────────────────
-
-/**
- * Compute performance statistics for O2.5 and U2.5 independently.
- *
- * Dedup: per fixtureId, keep the record with marketOdds populated;
- * if none have odds, keep the most recent.
- *
- * CLV uses tip_time vs closing snapshots.
- * Price movement uses tip_time vs pre_kickoff snapshots.
- */
-function getPredictionStats() {
+function updatePreKickoffOdds(fixtureId, market, preKoPrice) {
   const predictions = readJSONL(config.PREDICTIONS_FILE);
-  const results = readJSONL(config.RESULTS_FILE);
-  const closingOdds = readJSONL(config.CLOSING_ODDS_FILE);
-
-  const now = new Date();
-
-  // Build lookup maps
-  const resultMap = new Map();
-  for (const r of results) {
-    if (!resultMap.has(r.fixtureId)) resultMap.set(r.fixtureId, r);
+  let updated = false;
+  const newLines = predictions.map(p => {
+    if (p.fixtureId !== fixtureId || p.market !== market) return p;
+    if (p.preKickoffOdds != null) return p;
+    const movePct = (p.marketOdds != null && preKoPrice != null)
+      ? Math.round(((p.marketOdds / preKoPrice) - 1) * 10000) / 100 : null;
+    updated = true;
+    return { ...p, preKickoffOdds: preKoPrice, preKickoffMovePct: movePct };
+  });
+  if (updated) {
+    fs.writeFileSync(config.PREDICTIONS_FILE, newLines.map(l => JSON.stringify(l)).join('\n') + '\n', 'utf8');
   }
+  return updated;
+}
 
-  // Group snapshots by fixtureId+market+type
-  const snapshotMap = new Map();
-  for (const s of closingOdds) {
-    const key = `${s.fixtureId}__${s.market}__${s.snapshotType}`;
-    snapshotMap.set(key, s.decimalOdds);
-  }
-
-  // Deduplicate predictions: per fixtureId prefer records with odds
-  const dedupMap = new Map();
-  for (const p of predictions) {
-    const existing = dedupMap.get(p.fixtureId);
-    if (!existing) {
-      dedupMap.set(p.fixtureId, p);
-    } else {
-      const existingHasOdds = existing.marketOdds != null;
-      const pHasOdds = p.marketOdds != null;
-      if (pHasOdds && !existingHasOdds) {
-        dedupMap.set(p.fixtureId, p);
-      } else if (pHasOdds === existingHasOdds) {
-        // Both same odds status — keep most recent
-        dedupMap.set(p.fixtureId, p);
-      }
-    }
-  }
-
-  const dedupedPredictions = Array.from(dedupMap.values());
-
-  // Classify each prediction
-  const classified = dedupedPredictions.map(p => {
-    const result = resultMap.get(p.fixtureId) || null;
-
-    // CLV: tip_time vs closing
-    const closingKey = `${p.fixtureId}__${p.market}__closing`;
-    const closingPrice = snapshotMap.get(closingKey) || null;
-
-    // Price movement: tip_time vs pre_kickoff
-    const preKickoffKey = `${p.fixtureId}__${p.market}__pre_kickoff`;
-    const preKickoffPrice = snapshotMap.get(preKickoffKey) || null;
-
-    let status;
-    if (!result) {
-      const kickoff = estimateKickoffDate(p);
-      if (kickoff && (now - kickoff) / 60000 > 120) {
-        status = 'awaiting_result';
-      } else {
-        status = 'pending';
-      }
-    } else if (result.matchStatus !== 'completed') {
-      status = 'void';
-    } else {
-      const actual = getActualOutcome(p, result);
-      status = actual === null ? 'settled_unknown'
-             : actual ? 'settled_won' : 'settled_lost';
-    }
-
-    // CLV: positive = beat the close (value captured)
-    let clvPct = null;
-    if (p.marketOdds && closingPrice) {
-      clvPct = Math.round((closingPrice / p.marketOdds - 1) * -10000) / 100;
-    }
-
-    // Price movement from tip to pre-kickoff
-    let preKickoffMovePct = null;
-    if (p.marketOdds && preKickoffPrice) {
-      // Positive = odds shortened (market agrees), Negative = drifted out
-      preKickoffMovePct = Math.round((p.marketOdds / preKickoffPrice - 1) * 10000) / 100;
-    }
-
-    // Brier score contribution
-    let brierContrib = null;
-    if ((status === 'settled_won' || status === 'settled_lost') && p.modelProbability != null) {
-      const outcome = status === 'settled_won' ? 1 : 0;
-      brierContrib = Math.pow(p.modelProbability - outcome, 2);
-    }
-
+function settlePrediction(fixtureId, market, { homeGoals, awayGoals, closingOdds }) {
+  const predictions = readJSONL(config.PREDICTIONS_FILE);
+  let updated = false;
+  const newLines = predictions.map(p => {
+    if (p.fixtureId !== fixtureId || p.market !== market) return p;
+    const isSettleable = p.status === 'pending' || p.status == null;
+    if (!isSettleable) return p;
+    const totalGoals = (homeGoals ?? 0) + (awayGoals ?? 0);
+    const won = market === 'over_2.5' ? totalGoals > 2.5
+              : market === 'btts'     ? homeGoals > 0 && awayGoals > 0
+              : null;
+    const clvPct = (p.marketOdds != null && closingOdds != null)
+      ? Math.round(((p.marketOdds / closingOdds) - 1) * 10000) / 100 : null;
+    updated = true;
     return {
       ...p,
-      status,
-      result,
-      closingPrice,
-      preKickoffPrice,
+      closingOdds:  closingOdds ?? null,
       clvPct,
-      preKickoffMovePct,
-      brierContrib,
+      status:    won == null ? 'void' : won ? 'settled_won' : 'settled_lost',
+      result:    `${homeGoals}-${awayGoals}`,
+      settledAt: new Date().toISOString(),
     };
   });
+  if (updated) {
+    fs.writeFileSync(config.PREDICTIONS_FILE, newLines.map(l => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+    appendJSONL(config.RESULTS_FILE, {
+      fixtureId, settledAt: new Date().toISOString(),
+      fullTimeHome: homeGoals, fullTimeAway: awayGoals,
+      totalGoals: (homeGoals ?? 0) + (awayGoals ?? 0),
+      over25:  ((homeGoals ?? 0) + (awayGoals ?? 0)) > 2.5,
+      bttsYes: (homeGoals ?? 0) > 0 && (awayGoals ?? 0) > 0,
+    });
+  }
+  return updated;
+}
 
-  // Aggregate summary
-  const total = classified.length;
-  const pending = classified.filter(p => p.status === 'pending').length;
-  const awaiting = classified.filter(p => p.status === 'awaiting_result').length;
-  const voidCount = classified.filter(p => p.status === 'void').length;
-  const settled = classified.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
-  const won = settled.filter(p => p.status === 'settled_won').length;
-  const voidRate = (voidCount + settled.length) > 0
-    ? Math.round(voidCount / (voidCount + settled.length) * 1000) / 10
-    : null;
+// ── Stats — backwards compatible with old + new records ───────
 
-  // Per-market metrics — now 'over_2.5' and 'under_2.5'
-  const markets = {};
-  for (const market of ['over_2.5', 'under_2.5']) {
-    const mPreds = classified.filter(p => p.market === market);
-    const mSettled = mPreds.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
-    const mWon = mSettled.filter(p => p.status === 'settled_won');
+function getPredictionStats() {
+  const predictions = readJSONL(config.PREDICTIONS_FILE);
+  const results     = readJSONL(config.RESULTS_FILE);
 
-    const brierValues = mSettled.map(p => p.brierContrib).filter(v => v != null);
-    const brierScore = brierValues.length > 0
-      ? Math.round(brierValues.reduce((s, v) => s + v, 0) / brierValues.length * 10000) / 10000
-      : null;
+  // Result lookup for old-style settlement (no status field)
+  const resultMap = new Map();
+  for (const r of results) resultMap.set(r.fixtureId, r);
 
-    const edgeValues = mPreds.filter(p => p.edge != null).map(p => p.edge);
-    const meanEdge = edgeValues.length > 0
-      ? Math.round(edgeValues.reduce((s, v) => s + v, 0) / edgeValues.length * 100) / 100
-      : null;
-
-    const clvValues = mSettled.filter(p => p.clvPct != null).map(p => p.clvPct);
-    const meanCLV = clvValues.length > 0
-      ? Math.round(clvValues.reduce((s, v) => s + v, 0) / clvValues.length * 100) / 100
-      : null;
-
-    const moveValues = mPreds.filter(p => p.preKickoffMovePct != null).map(p => p.preKickoffMovePct);
-    const meanPreKickoffMove = moveValues.length > 0
-      ? Math.round(moveValues.reduce((s, v) => s + v, 0) / moveValues.length * 100) / 100
-      : null;
-
-    const probValues = mPreds.map(p => p.modelProbability).filter(v => v != null);
-    const meanModelProb = probValues.length > 0
-      ? Math.round(probValues.reduce((s, v) => s + v, 0) / probValues.length * 1000) / 10
-      : null;
-
-    markets[market] = {
-      total: mPreds.length,
-      pending: mPreds.filter(p => p.status === 'pending').length,
-      awaiting: mPreds.filter(p => p.status === 'awaiting_result').length,
-      void: mPreds.filter(p => p.status === 'void').length,
-      settled: mSettled.length,
-      won: mWon.length,
-      hitRate: mSettled.length > 0
-        ? Math.round(mWon.length / mSettled.length * 1000) / 10 : null,
-      brierScore,
-      meanEdgePct: meanEdge,
-      meanCLVPct: meanCLV,
-      clvSampleSize: clvValues.length,
-      meanPreKickoffMovePct: meanPreKickoffMove,
-      preKickoffSampleSize: moveValues.length,
-      meanModelProb,
-    };
+  function resolveStatus(p) {
+    // New records have an explicit status
+    if (p.status === 'settled_won' || p.status === 'settled_lost' || p.status === 'void') return p.status;
+    // Old records: look up in results.jsonl
+    const r = resultMap.get(p.fixtureId);
+    if (!r) return 'pending';
+    const total = r.totalGoals ?? ((r.fullTimeHome ?? 0) + (r.fullTimeAway ?? 0));
+    if (p.market === 'over_2.5') return total > 2.5 ? 'settled_won' : 'settled_lost';
+    if (p.market === 'btts')     return (r.bttsYes || (r.fullTimeHome > 0 && r.fullTimeAway > 0)) ? 'settled_won' : 'settled_lost';
+    return 'pending';
   }
 
-  // Recent settled predictions for the performance UI table
-  const recentSettled = classified
+  function resolveResult(p) {
+    if (p.result) return p.result;
+    const r = resultMap.get(p.fixtureId);
+    return r ? `${r.fullTimeHome ?? '?'}-${r.fullTimeAway ?? '?'}` : null;
+  }
+
+  function resolveSettledAt(p) {
+    if (p.settledAt) return p.settledAt;
+    return resultMap.get(p.fixtureId)?.settledAt || null;
+  }
+
+  const annotated = predictions.map(p => ({
+    ...p,
+    status:    resolveStatus(p),
+    result:    resolveResult(p),
+    settledAt: resolveSettledAt(p),
+    grade:     p.grade || p.inputs?.grade || '—',
+    direction: p.direction || 'o25',
+  }));
+
+  function marketStats(preds) {
+    const settled = preds.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
+    const won     = settled.filter(p => p.status === 'settled_won');
+    const pending = preds.filter(p => p.status === 'pending');
+    const voided  = preds.filter(p => p.status === 'void');
+
+    const hitRate = settled.length > 0 ? Math.round(won.length / settled.length * 1000) / 10 : null;
+
+    const edgePreds = preds.filter(p => p.edge != null);
+    const meanEdgePct = edgePreds.length > 0
+      ? Math.round(edgePreds.reduce((s, p) => s + p.edge, 0) / edgePreds.length * 10) / 10 : null;
+
+    const movePreds = preds.filter(p => p.preKickoffMovePct != null);
+    const meanPreKickoffMovePct = movePreds.length > 0
+      ? Math.round(movePreds.reduce((s, p) => s + p.preKickoffMovePct, 0) / movePreds.length * 10) / 10 : null;
+
+    const clvPreds = preds.filter(p => p.clvPct != null);
+    const meanCLVPct = clvPreds.length > 0
+      ? Math.round(clvPreds.reduce((s, p) => s + p.clvPct, 0) / clvPreds.length * 10) / 10 : null;
+
+    const meanModelProb = preds.length > 0
+      ? Math.round(preds.reduce((s, p) => s + (p.modelProbability || 0), 0) / preds.length * 100) : null;
+
+    let brierScore = null;
+    if (settled.length > 0) {
+      const sum = settled.reduce((s, p) => s + Math.pow((p.modelProbability || 0) - (p.status === 'settled_won' ? 1 : 0), 2), 0);
+      brierScore = Math.round(sum / settled.length * 10000) / 10000;
+    }
+
+    return { total: preds.length, settled: settled.length, won: won.length, pending: pending.length, awaiting: voided.length, hitRate, meanModelProb, meanEdgePct, meanPreKickoffMovePct, meanCLVPct, brierScore };
+  }
+
+  // over_2.5 tab shows over_2.5 AND btts (all historical data)
+  // under_2.5 tab shows under_2.5 only (future records)
+  const o25preds = annotated.filter(p => p.market === 'over_2.5' || p.market === 'btts');
+  const u25preds = annotated.filter(p => p.market === 'under_2.5');
+  const allSettled = annotated.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
+  const allWon     = annotated.filter(p => p.status === 'settled_won');
+  const allVoid    = annotated.filter(p => p.status === 'void');
+
+  const recentSettled = annotated
     .filter(p => p.status === 'settled_won' || p.status === 'settled_lost')
-    .sort((a, b) => new Date(b.predictionTimestamp) - new Date(a.predictionTimestamp))
-    .slice(0, 30)
-    .map(p => ({
-      fixtureId: p.fixtureId,
-      predictionDate: p.predictionDate,
-      homeTeam: p.homeTeam,
-      awayTeam: p.awayTeam,
-      league: p.league,
-      market: p.market,
-      direction: p.direction,
-      modelProbability: p.modelProbability,
-      fairOdds: p.fairOdds,
-      marketOdds: p.marketOdds,
-      bookmaker: p.bookmaker,
-      edge: p.edge,
-      preKickoffOdds: p.preKickoffPrice,
-      preKickoffMovePct: p.preKickoffMovePct,
-      closingOdds: p.closingPrice,
-      clvPct: p.clvPct,
-      status: p.status,
-      score: p.result
-        ? `${p.result.fullTimeHome}–${p.result.fullTimeAway}`
-        : null,
-      modelVersion: p.modelVersion,
-    }));
+    .sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''))
+    .slice(0, 50);
 
   return {
-    generatedAt: now.toISOString(),
     summary: {
-      total, pending, awaiting,
-      void: voidCount,
-      settled: settled.length,
-      won,
-      voidRatePct: voidRate,
+      total:       annotated.length,
+      settled:     allSettled.length,
+      won:         allWon.length,
+      pending:     annotated.filter(p => p.status === 'pending').length,
+      awaiting:    allVoid.length,
+      void:        allVoid.length,
+      voidRatePct: annotated.length > 0 ? Math.round(allVoid.length / annotated.length * 1000) / 10 : 0,
     },
-    markets,
+    markets: {
+      'over_2.5':  marketStats(o25preds),
+      'under_2.5': marketStats(u25preds),
+    },
     recentSettled,
   };
 }
 
-// ── Internal helpers ──────────────────────────────────────────
-
-function getActualOutcome(prediction, result) {
-  if (result.matchStatus !== 'completed') return null;
-  if (prediction.market === 'over_2.5') return result.over25 ?? null;
-  if (prediction.market === 'under_2.5') return result.under25 ?? null;
-  return null;
-}
-
-function estimateKickoffDate(prediction) {
-  if (prediction.commenceTime) return new Date(prediction.commenceTime);
-  if (!prediction.predictionDate || !prediction.kickoff) return null;
-  try {
-    const [hh, mm] = prediction.kickoff.split(':').map(Number);
-    return new Date(
-      `${prediction.predictionDate}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00+10:00`
-    );
-  } catch { return null; }
-}
-
-module.exports = {
-  logPrediction,
-  logResult,
-  logOddsSnapshot,
-  readJSONL,
-  getPredictionStats,
-};
+module.exports = { logPrediction, updatePreKickoffOdds, settlePrediction, readJSONL, getPredictionStats };

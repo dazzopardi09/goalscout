@@ -17,81 +17,68 @@ module.exports = {
   DETAILS_DIR:      path.join(DATA_DIR, 'match-details'),
   ODDS_FILE:        path.join(DATA_DIR, 'odds.json'),
 
-  // ── Historical logging ─────────────────────────────────────
-  // Append-only JSONL files — never overwritten on refresh.
+  // ── Historical logging (lean data model) ──────────────────
+  // These files ACCUMULATE — they are NOT overwritten on refresh.
   HISTORY_DIR:      path.join(DATA_DIR, 'history'),
   PREDICTIONS_FILE: path.join(DATA_DIR, 'history', 'predictions.jsonl'),
   RESULTS_FILE:     path.join(DATA_DIR, 'history', 'results.jsonl'),
-  CLOSING_ODDS_FILE: path.join(DATA_DIR, 'history', 'closing-odds.jsonl'),
 
-  // ── SoccerSTATS ────────────────────────────────────────────
+  // ── SoccerSTATS ───────────────────────────────────────────
   SOCCERSTATS_COOKIE: process.env.SOCCERSTATS_COOKIE || '',
   BASE_URL: 'https://www.soccerstats.com',
 
-  // ── Timezone ───────────────────────────────────────────────
+  // ── Timezone ──────────────────────────────────────────────
   DISPLAY_TIMEZONE: process.env.DISPLAY_TIMEZONE || 'Australia/Melbourne',
 
-  // ── The Odds API ───────────────────────────────────────────
-  // Multiple keys (comma-separated) rotated round-robin.
-  ODDS_API_KEYS: (process.env.ODDS_API_KEYS || '').split(',').filter(Boolean),
+  // ── The Odds API ──────────────────────────────────────────
+  ODDS_API_KEYS:  (process.env.ODDS_API_KEYS || '').split(',').filter(Boolean),
+  ODDS_REGIONS:   process.env.ODDS_REGIONS || 'au',
+  ODDS_MARKETS:   'totals,btts',
 
-  // Region: 'uk' for Bet365, Pinnacle, William Hill, Betfair Exchange etc.
-  // AU dropped — doesn't offer EPL O2.5 totals, doubles quota cost.
-  ODDS_REGIONS: (process.env.ODDS_REGIONS || 'uk')
-    .split(',').map(r => r.trim().toLowerCase()).filter(Boolean).join(','),
-
-  // Optional bookmaker allowlist. Empty = all books eligible (best price wins).
-  // Set to comma-separated keys to restrict (e.g. 'bet365,pinnacle').
-  ODDS_BOOKMAKERS: (process.env.ODDS_BOOKMAKERS || '')
-    .split(',').map(b => b.trim().toLowerCase()).filter(Boolean),
-
-  // Daily call limit across all keys. Resets at UTC midnight.
-  // 4 keys × 500/month ≈ 65/day. 40 is comfortable with UK-only.
-  ODDS_DAILY_LIMIT: parseInt(process.env.ODDS_DAILY_LIMIT || '40', 10),
-
-  // Markets to fetch (totals = Over/Under, captures both sides)
-  ODDS_MARKETS: 'totals',
-
-  // ── Betfair (Phase 3) ──────────────────────────────────────
+  // ── Betfair API (phase 3) ─────────────────────────────────
   BETFAIR_APP_KEY: process.env.BETFAIR_APP_KEY || '',
   BETFAIR_SESSION: process.env.BETFAIR_SESSION || '',
 
-  // ── Scraping ───────────────────────────────────────────────
+  // ── Scraping ──────────────────────────────────────────────
   REQUEST_DELAY_MS:   3000,
   REQUEST_TIMEOUT_MS: 15000,
-  USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 
-  // ── Refresh schedule ───────────────────────────────────────
-  CRON_SCHEDULE: '5 */6 * * *',
+  // ── Schedules ─────────────────────────────────────────────
+  CRON_SCHEDULE:    '5 */6 * * *',   // main refresh — every 6 hours
+  PREKICKOFF_CRON:  '*/30 * * * *',  // pre-KO odds — every 30 minutes
+  SETTLE_CRON:      '15 */3 * * *',  // settlement check — every 3 hours
 
   // ── Shortlist scoring thresholds ──────────────────────────
-  //
-  // Used by shortlist.js for both O2.5 and U2.5 directional scoring.
-  // A match is shortlisted based on its best direction only.
-  //
   THRESHOLDS: {
-    // ── Shared ──────────────────────────────────────────────
-    PPG_STRONG: 2.0,   // PPG threshold for "dominant" team
-    PPG_WEAK:   1.0,   // PPG threshold for "weak" team
-    MIN_GP:     5,     // Minimum games played to trust stats
+    // Minimum % to generate a flag
+    O25_FLAG:   55,
+    BTTS_FLAG:  55,
+    TG_FLAG:    2.8,
+    PPG_STRONG: 2.0,
+    PPG_WEAK:   1.0,
 
-    // ── O2.5 signals ────────────────────────────────────────
-    // Positive flags use hardcoded thresholds in shortlist.js
-    // (75/65/55 for O2.5%; 6.0/5.0 for combined TG; 55% league)
+    // Negative flag thresholds (harsher)
+    FTS_HIGH:   35,
+    CS_HIGH:    35,
 
-    // Negative flags for O2.5 (defensive teams hurt the Over)
-    CS_HIGH:  35,  // CS% above this → strong O2.5 negative signal
-    FTS_HIGH: 35,  // FTS% above this → strong O2.5 negative signal
+    // Minimum games played to trust stats
+    MIN_GP:     5,
 
-    // ── U2.5 signals ────────────────────────────────────────
-    // Positive flags use hardcoded thresholds in shortlist.js
-    // (40/30 for CS%; 40 for FTS%; ≤40 for O2.5%; ≤2.2 combined TG)
+    // Minimum composite score for shortlist
+    MIN_SCORE:  5,
 
-    // ── Shortlist gate ──────────────────────────────────────
-    // A match must reach MIN_SCORE in its winning direction.
-    MIN_SCORE: 5,
+    // Category gate
+    MIN_SINGLE_CAT: 4,
+    MIN_DUAL_CAT:   2,
+
+    // NEW: Minimum model probability for the recommended direction.
+    // Matches below this are excluded from the shortlist even if
+    // they pass the flag score gate. Removes the 47-56% noise.
+    // Set to 0 to disable.
+    MIN_PROB: 0.60,
   },
 
-  // ── Server ─────────────────────────────────────────────────
+  // ── Server ────────────────────────────────────────────────
   PORT: process.env.PORT || 3030,
 };

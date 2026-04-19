@@ -170,7 +170,8 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
 
     // ── Step 7: Probability engine + prediction logging ───
     refreshState.progress = 'Calculating probabilities...';
-
+    const minProb = config.THRESHOLDS?.MIN_PROB || 0;
+ 
     for (const m of shortlisted) {
       try {
         const analysis = analyseMatch(m, leagueStatsMap[m.leagueSlug] || {});
@@ -180,7 +181,22 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
         console.warn(`[orchestrator] probability failed for ${m.id}:`, e.message);
       }
     }
-
+ 
+    // Apply probability floor AFTER analysis runs.
+    // For O2.5 direction: filter out if P(O2.5) < MIN_PROB
+    // For U2.5 direction: filter out if (1 - P(O2.5)) < MIN_PROB
+    // i.e. a U2.5 match needs P(O2.5) < (1 - MIN_PROB) to be confident.
+    const beforeFilter = shortlisted.length;
+    if (minProb > 0) {
+      for (let i = shortlisted.length - 1; i >= 0; i--) {
+        const m = shortlisted[i];
+        const prob = m.analysis?.o25?.probability;
+        if (prob == null) { shortlisted.splice(i, 1); continue; }
+        const dirProb = m.direction === 'u25' ? (1 - prob) : prob;
+        if (dirProb < minProb) shortlisted.splice(i, 1);
+      }
+    }
+ 
     const withProbs = shortlisted.filter(m => m.analysis).length;
     const withOdds = shortlisted.filter(m => {
       const a = m.analysis;
@@ -196,8 +212,8 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
         (m.direction === 'u25' && a.u25?.edge != null)
       );
     }).length;
-
-    console.log(`[orchestrator] probabilities: ${withProbs} calculated, ${withOdds} with odds, ${withEdge} with edge`);
+ 
+    console.log(`[orchestrator] probabilities: ${withProbs} calculated, ${withOdds} with odds, ${withEdge} with edge, ${beforeFilter - shortlisted.length} filtered below MIN_PROB (${minProb * 100}%)`);
 
     // ── Step 8: Match details for top shortlisted ─────────
     if (scrapeDetails && shortlisted.length > 0) {
