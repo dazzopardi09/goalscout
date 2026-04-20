@@ -1,12 +1,14 @@
 {
   "name": "goalscout",
   "version": "1.0.0",
-  "description": "Football match investigation tool — Over 2.5 & BTTS shortlisting from SoccerSTATS",
+  "description": "Football match investigation tool — Over 2.5 & Under 2.5 shortlisting from SoccerSTATS",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "scrape": "node src/scrape-cli.js"
+    "scrape": "node src/scrape-cli.js",
+    "backtest": "node src/analysis/backtest.js",
+    "backtest:save": "node src/analysis/backtest.js --output data/history/backtest-report.json"
   },
   "dependencies": {
     "cheerio": "^1.0.0",

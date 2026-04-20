@@ -32,9 +32,24 @@ function readJSONL(filePath) {
 // ── Prediction logging ────────────────────────────────────────
 
 function logPrediction(match, analysis) {
-  const today    = new Date().toISOString().slice(0, 10);
-  const existing = readJSONL(config.PREDICTIONS_FILE);
-  if (existing.some(p => p.fixtureId === match.id && p.predictionDate === today)) return;
+  const today     = new Date().toISOString().slice(0, 10);
+  const existing  = readJSONL(config.PREDICTIONS_FILE);
+
+  const direction = match.direction || null; // 'o25' | 'u25'
+
+  const market =
+    direction === 'u25' ? 'under_2.5' :
+    direction === 'o25' ? 'over_2.5'  :
+    null;
+
+  if (!market) {
+    console.warn(`[history] no direction for ${match.id} — skipping`);
+    return;
+  }
+
+  if (existing.some(p => p.fixtureId === match.id && p.market === market && p.predictionDate === today)) {
+    return;
+  }
 
   const base = {
     fixtureId:           match.id,
@@ -48,20 +63,27 @@ function logPrediction(match, analysis) {
     kickoff:             match.kickoff,
     day:                 match.day,
     commenceTime:        match.odds?.commenceTime || null,
-    grade:               match.grade   || null,
-    direction:           match.direction || null,
+    eventId:             match.odds?.eventId || null,
+    grade:               match.grade || null,
+    direction,
+    baseO25Score:        match.o25score != null ? match.o25score : null,
+    baseU25Score:        match.u25score != null ? match.u25score : null,
+    winningDirection:    direction,
+    winningScore:        match.score != null ? match.score : null,
   };
 
-  if (analysis.o25?.probability != null) {
+  if (direction === 'o25' && analysis.o25?.probability != null) {
+    const a = analysis.o25;
+
     appendJSONL(config.PREDICTIONS_FILE, {
       ...base,
       market:            'over_2.5',
       selection:         'over',
-      modelProbability:  analysis.o25.probability,
-      fairOdds:          analysis.o25.fairOdds,
-      marketOdds:        analysis.o25.marketOdds,
-      bookmaker:         analysis.o25.bookmaker,
-      edge:              analysis.o25.edge,
+      modelProbability:  a.probability,
+      fairOdds:          a.fairOdds,
+      marketOdds:        a.marketOdds || null,
+      bookmaker:         a.bookmaker || null,
+      edge:              a.edge != null ? a.edge : null,
       preKickoffOdds:    null,
       preKickoffMovePct: null,
       closingOdds:       null,
@@ -74,22 +96,28 @@ function logPrediction(match, analysis) {
         awayO25pct: match.away?.o25pct,
         homeAvgTG:  match.home?.avgTG,
         awayAvgTG:  match.away?.avgTG,
+        homeCSpct:  match.home?.csPct,
+        awayCSpct:  match.away?.csPct,
+        homeFTSpct: match.home?.ftsPct,
+        awayFTSpct: match.away?.ftsPct,
         flagScore:  match.score,
         grade:      match.grade,
       },
     });
   }
 
-  if (analysis.btts?.probability != null) {
+  if (direction === 'u25' && analysis.u25?.probability != null) {
+    const a = analysis.u25;
+
     appendJSONL(config.PREDICTIONS_FILE, {
       ...base,
-      market:            'btts',
-      selection:         'yes',
-      modelProbability:  analysis.btts.probability,
-      fairOdds:          analysis.btts.fairOdds,
-      marketOdds:        analysis.btts.marketOdds,
-      bookmaker:         analysis.btts.bookmaker,
-      edge:              analysis.btts.edge,
+      market:            'under_2.5',
+      selection:         'under',
+      modelProbability:  a.probability,
+      fairOdds:          a.fairOdds,
+      marketOdds:        a.marketOdds || null,
+      bookmaker:         a.bookmaker || null,
+      edge:              a.edge != null ? a.edge : null,
       preKickoffOdds:    null,
       preKickoffMovePct: null,
       closingOdds:       null,
@@ -98,12 +126,12 @@ function logPrediction(match, analysis) {
       result:            null,
       settledAt:         null,
       inputs: {
-        homeBTSpct: match.home?.btsPct,
-        awayBTSpct: match.away?.btsPct,
-        homeFTSpct: match.home?.ftsPct,
-        awayFTSpct: match.away?.ftsPct,
+        homeO25pct: match.home?.o25pct,
+        awayO25pct: match.away?.o25pct,
         homeCSpct:  match.home?.csPct,
         awayCSpct:  match.away?.csPct,
+        homeFTSpct: match.home?.ftsPct,
+        awayFTSpct: match.away?.ftsPct,
         flagScore:  match.score,
         grade:      match.grade,
       },
@@ -133,36 +161,54 @@ function updatePreKickoffOdds(fixtureId, market, preKoPrice) {
 function settlePrediction(fixtureId, market, { homeGoals, awayGoals, closingOdds }) {
   const predictions = readJSONL(config.PREDICTIONS_FILE);
   let updated = false;
+
   const newLines = predictions.map(p => {
     if (p.fixtureId !== fixtureId || p.market !== market) return p;
+
     const isSettleable = p.status === 'pending' || p.status == null;
     if (!isSettleable) return p;
+
     const totalGoals = (homeGoals ?? 0) + (awayGoals ?? 0);
-    const won = market === 'over_2.5' ? totalGoals > 2.5
-              : market === 'btts'     ? homeGoals > 0 && awayGoals > 0
+    const won = market === 'over_2.5'  ? totalGoals > 2.5
+              : market === 'under_2.5' ? totalGoals < 2.5
+              : market === 'btts'      ? homeGoals > 0 && awayGoals > 0
               : null;
+
     const clvPct = (p.marketOdds != null && closingOdds != null)
-      ? Math.round(((p.marketOdds / closingOdds) - 1) * 10000) / 100 : null;
+      ? Math.round(((p.marketOdds / closingOdds) - 1) * 10000) / 100
+      : null;
+
     updated = true;
+
     return {
       ...p,
-      closingOdds:  closingOdds ?? null,
+      closingOdds: closingOdds ?? null,
       clvPct,
-      status:    won == null ? 'void' : won ? 'settled_won' : 'settled_lost',
-      result:    `${homeGoals}-${awayGoals}`,
+      status: won == null ? 'void' : won ? 'settled_won' : 'settled_lost',
+      result: `${homeGoals}-${awayGoals}`,
       settledAt: new Date().toISOString(),
     };
   });
+
   if (updated) {
-    fs.writeFileSync(config.PREDICTIONS_FILE, newLines.map(l => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+    fs.writeFileSync(
+      config.PREDICTIONS_FILE,
+      newLines.map(l => JSON.stringify(l)).join('\n') + '\n',
+      'utf8'
+    );
+
     appendJSONL(config.RESULTS_FILE, {
-      fixtureId, settledAt: new Date().toISOString(),
-      fullTimeHome: homeGoals, fullTimeAway: awayGoals,
+      fixtureId,
+      settledAt: new Date().toISOString(),
+      fullTimeHome: homeGoals,
+      fullTimeAway: awayGoals,
       totalGoals: (homeGoals ?? 0) + (awayGoals ?? 0),
-      over25:  ((homeGoals ?? 0) + (awayGoals ?? 0)) > 2.5,
+      over25: ((homeGoals ?? 0) + (awayGoals ?? 0)) > 2.5,
+      under25: ((homeGoals ?? 0) + (awayGoals ?? 0)) < 2.5,
       bttsYes: (homeGoals ?? 0) > 0 && (awayGoals ?? 0) > 0,
     });
   }
+
   return updated;
 }
 
@@ -178,13 +224,20 @@ function getPredictionStats() {
 
   function resolveStatus(p) {
     // New records have an explicit status
-    if (p.status === 'settled_won' || p.status === 'settled_lost' || p.status === 'void') return p.status;
+    if (p.status === 'settled_won' || p.status === 'settled_lost' || p.status === 'void') {
+      return p.status;
+    }
+
     // Old records: look up in results.jsonl
     const r = resultMap.get(p.fixtureId);
     if (!r) return 'pending';
+
     const total = r.totalGoals ?? ((r.fullTimeHome ?? 0) + (r.fullTimeAway ?? 0));
-    if (p.market === 'over_2.5') return total > 2.5 ? 'settled_won' : 'settled_lost';
-    if (p.market === 'btts')     return (r.bttsYes || (r.fullTimeHome > 0 && r.fullTimeAway > 0)) ? 'settled_won' : 'settled_lost';
+
+    if (p.market === 'over_2.5')  return total > 2.5 ? 'settled_won' : 'settled_lost';
+    if (p.market === 'under_2.5') return total < 2.5 ? 'settled_won' : 'settled_lost';
+    if (p.market === 'btts')      return (r.bttsYes || (r.fullTimeHome > 0 && r.fullTimeAway > 0)) ? 'settled_won' : 'settled_lost';
+
     return 'pending';
   }
 
