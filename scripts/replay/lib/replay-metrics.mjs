@@ -20,6 +20,8 @@ export function getTeamMetrics(matches, teamName) {
       avgTG: null,
       csPct: null,
       ftsPct: null,
+      goalsForAvg: null,
+      goalsAgainstAvg: null,
     };
   }
 
@@ -27,6 +29,8 @@ export function getTeamMetrics(matches, teamName) {
   let totalGoalsSum = 0;
   let cleanSheets = 0;
   let failedToScore = 0;
+  let goalsForSum = 0;
+  let goalsAgainstSum = 0;
 
   for (const m of matches) {
     const isHome = m.homeTeam === teamName;
@@ -38,6 +42,9 @@ export function getTeamMetrics(matches, teamName) {
     totalGoalsSum += tg;
     if (ga === 0) cleanSheets += 1;
     if (gf === 0) failedToScore += 1;
+
+    goalsForSum += gf ?? 0;
+    goalsAgainstSum += ga ?? 0;
   }
 
   const played = matches.length;
@@ -48,6 +55,8 @@ export function getTeamMetrics(matches, teamName) {
     avgTG: Math.round((totalGoalsSum / played) * 100) / 100,
     csPct: Math.round((cleanSheets / played) * 100),
     ftsPct: Math.round((failedToScore / played) * 100),
+    goalsForAvg: Math.round((goalsForSum / played) * 100) / 100,
+    goalsAgainstAvg: Math.round((goalsAgainstSum / played) * 100) / 100,
   };
 }
 
