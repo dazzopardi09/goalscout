@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GoalScout — Build Checklist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#070d16;
+  --panel:#08101b;
+  --panel-2:#0b1220;
+  --panel-3:#0f1726;
+  --text:#e5edf8;
+  --muted:#8b9ab0;
+  --muted-2:#66758c;
+  --line:rgba(255,255,255,0.08);
+  --green:#6ee7b7;
+  --amber:#fbbf24;
+  --red:#f87171;
+  --blue:#7dd3fc;
+  --indigo:#818cf8;
+  --violet:#c4b5fd;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);padding:32px 24px 64px;min-height:100vh}
+.app{max-width:980px;margin:0 auto}
+.header{margin-bottom:28px}
+.header h1{font-size:24px;font-weight:700;letter-spacing:-.03em;color:#a7f3d0}
+.header h1 span{color:#64748b;font-weight:500}
+.header p{margin-top:8px;font-size:13px;color:var(--muted);line-height:1.6;max-width:860px}
+.progress-wrap{margin-bottom:24px}
+.progress-label{font-size:12px;color:var(--muted-2);margin-bottom:6px}
+.progress-bar{height:5px;border-radius:999px;background:var(--line);overflow:hidden}
+.progress-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--green),#34d399);transition:width .25s}
+.callout{border:1px solid rgba(125,211,252,.18);border-left:3px solid var(--blue);background:rgba(56,189,248,.07);border-radius:14px;padding:14px 16px;margin-bottom:14px;font-size:13px;color:#cdefff;line-height:1.7}
+.warning{border:1px solid rgba(251,191,36,.2);border-left:3px solid var(--amber);background:rgba(245,158,11,.08);border-radius:14px;padding:14px 16px;margin-bottom:28px;font-size:13px;color:#fcd34d;line-height:1.7}
+.warning strong,.callout strong{color:#fff}
+.section{margin-bottom:30px}
+.section-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.section-title{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2)}
+.badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px}
+.badge-red{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(248,113,113,.25)}
+.badge-amber{background:rgba(245,158,11,.15);color:var(--amber);border:1px solid rgba(251,191,36,.25)}
+.badge-blue{background:rgba(59,130,246,.15);color:var(--blue);border:1px solid rgba(125,211,252,.25)}
+.badge-green{background:rgba(16,185,129,.15);color:var(--green);border:1px solid rgba(110,231,183,.25)}
+.badge-indigo{background:rgba(99,102,241,.16);color:var(--indigo);border:1px solid rgba(129,140,248,.24)}
+.badge-violet{background:rgba(139,92,246,.15);color:var(--violet);border:1px solid rgba(196,181,253,.22)}
+.task{display:flex;align-items:flex-start;gap:12px;padding:13px 14px;border-radius:14px;margin-bottom:6px;cursor:pointer;border:1px solid transparent;transition:background .12s,border-color .12s,transform .08s;background:transparent}
+.task:hover{background:var(--panel);border-color:var(--line)}
+.task:active{transform:translateY(1px)}
+.task.done{opacity:.5}
+.task.done .task-title{text-decoration:line-through;color:var(--muted-2)}
+.checkbox{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--muted-2);flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;transition:all .15s;background:transparent}
+.checkbox.checked{background:var(--green);border-color:var(--green)}
+.checkbox.checked::after{content:'';display:block;width:5px;height:9px;border:2px solid #052e16;border-top:none;border-left:none;transform:rotate(45deg) translate(-1px,-1px)}
+.task-body{flex:1;min-width:0}
+.task-title{font-size:14px;font-weight:600;line-height:1.45;color:var(--text)}
+.task-sub{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.68}
+.task-tags{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap}
+.tag{font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.04);color:var(--muted);border:1px solid var(--line)}
+.tag.file{color:#93c5fd;background:rgba(59,130,246,.08);border-color:rgba(125,211,252,.2)}
+.tag.warn{color:var(--amber);background:rgba(245,158,11,.08);border-color:rgba(251,191,36,.2)}
+.tag.good{color:var(--green);background:rgba(16,185,129,.08);border-color:rgba(110,231,183,.2)}
+.tag.model{color:#c4b5fd;background:rgba(139,92,246,.08);border-color:rgba(196,181,253,.2)}
+.note{font-size:12px;color:var(--muted);line-height:1.65;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:12px}
+.updated{font-size:11px;color:var(--muted-2);text-align:right;margin-top:26px;border-top:1px solid var(--line);padding-top:12px}
+@media (max-width: 640px){body{padding:20px 14px 48px}.header h1{font-size:21px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>GoalScout <span>/ Build Checklist</span></h1>
+    <p>Working checklist for the live GoalScout codebase. This now reflects the post-BTTS architecture reset, directional O2.5 / U2.5 shortlist logic, corrected prediction logging, corrected settlement path, and the new backtesting foundation. Tick items off as they are completed. State is saved in localStorage and persists across browser sessions.</p>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-label" id="prog-label">0 of 20 tasks done</div>
+    <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+  </div>
+
+  <div class="callout">
+    <strong>Current state:</strong> the core shortlist architecture has been fixed. BTTS is out of the shortlist engine. GoalScout now scores O2.5 and U2.5 separately, shortlists only the winning direction, logs only final shortlist survivors, and has a working backtest pipeline that can measure accuracy, Brier score, ROI on priced bets, calibration buckets, and error rows.
+  </div>
+
+  <div class="warning">
+    <strong>Do not optimise off noise yet.</strong> The backtesting pipeline is now live, but the early report only has a very small settled sample. Treat current metrics as pipeline validation, not model proof. The right order is: reliable results source → more settled data → baseline review → xG/context layers behind feature flags → backtest comparison before promotion.
+  </div>
+
+  <!-- ── COMPLETED FOUNDATION ───────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="badge badge-green">Completed foundation</span>
+      <span class="section-title">Core directional engine + backtesting groundwork</span>
+    </div>
+
+    <div class="task" id="t1" onclick="toggle('t1')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Lock in the directional shortlist architecture</div>
+        <div class="task-sub">BTTS has been removed from shortlist logic. O2.5 and U2.5 are now separate scorers, tied directions are filtered as ambiguous, shortlist uses the winning direction only, and prediction logging happens after the probability floor so only final shortlist survivors hit history.</div>
+        <div class="task-tags"><span class="tag good">done</span><span class="tag file">shortlist.js</span><span class="tag file">probability.js</span><span class="tag file">config.js</span><span class="tag model">directional engine</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t2" onclick="toggle('t2')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Update history logging for directional analysis</div>
+        <div class="task-sub">Prediction rows now need to carry the fields required for backtesting and debugging: direction, top-level grade, baseO25Score, baseU25Score, winningDirection, and winningScore. Deduplication also needs to be directional-aware (fixtureId + market + date).</div>
+        <div class="task-tags"><span class="tag good">done</span><span class="tag file">history.js</span><span class="tag model">logging schema</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t3" onclick="toggle('t3')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Fix under_2.5 settlement compatibility end-to-end</div>
+        <div class="task-sub">Under 2.5 must settle correctly in live prediction rows, old-style status resolution, and backtesting joins. The under rule should be consistent everywhere so no under rows fall through to void or pending by mistake.</div>
+        <div class="task-tags"><span class="tag good">done</span><span class="tag file">history.js</span><span class="tag file">backtest.js</span><span class="tag">under settlement</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t4" onclick="toggle('t4')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Build the baseline backtesting pipeline</div>
+        <div class="task-sub">Backtester is in place and can now normalise history, exclude legacy BTTS rows from directional analysis, join to results, calculate accuracy, Brier score, ROI on priced bets only, calibration buckets, grade splits, confidence splits, league splits, and structured error rows.</div>
+        <div class="task-tags"><span class="tag good">done</span><span class="tag file">src/analysis/backtest.js</span><span class="tag file">package.json</span><span class="tag model">validation foundation</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── NOW ─────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="badge badge-red">Now</span>
+      <span class="section-title">Stabilise the baseline before smarter model layers</span>
+    </div>
+
+    <div class="task" id="t5" onclick="toggle('t5')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Push, merge, and redeploy the backtesting foundation branch</div>
+        <div class="task-sub">Get the directional logging, settlement fixes, package scripts, and backtesting file into git and into main. This becomes the new clean baseline for all future model work.</div>
+        <div class="task-tags"><span class="tag file">package.json</span><span class="tag file">history.js</span><span class="tag file">src/analysis/backtest.js</span><span class="tag warn">do not lose this checkpoint</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t6" onclick="toggle('t6')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Verify one fresh live prediction row after redeploy</div>
+        <div class="task-sub">After the next refresh, inspect a newly logged row in predictions.jsonl and confirm the new fields are present and populated correctly: direction, grade, baseO25Score, baseU25Score, winningDirection, winningScore. This is the final proof the new logging path is live, not just passing local tests.</div>
+        <div class="task-tags"><span class="tag file">data/history/predictions.jsonl</span><span class="tag file">history.js</span><span class="tag warn">post-deploy sanity check</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t7" onclick="toggle('t7')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Replace unreliable result settlement source</div>
+        <div class="task-sub">Incorrect scores corrupt hit rate, Brier, calibration, and ROI all at once. Move settlement away from the current unreliable results source and onto a more reliable feed before trusting any model-performance conclusions.</div>
+        <div class="task-tags"><span class="tag warn">metrics corruption risk</span><span class="tag file">settler.js</span><span class="tag">results source</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t8" onclick="toggle('t8')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Run and archive baseline backtest snapshots</div>
+        <div class="task-sub">Use the new backtest script regularly after meaningful changes and save JSON snapshots. These snapshots become the benchmark for every future change: thresholds, xG layer, context layer, match types, or odds handling.</div>
+        <div class="task-tags"><span class="tag file">src/analysis/backtest.js</span><span class="tag file">data/history/backtest-report.json</span><span class="tag model">baseline control</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t9" onclick="toggle('t9')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Tighten odds matching reliability</div>
+        <div class="task-sub">Any failure to map a shortlisted match to market odds means missed value data and weaker ROI analysis. Improve name matching / normalisation so shorthand names and league-specific naming differences stop breaking price joins.</div>
+        <div class="task-tags"><span class="tag file">the-odds-api.js</span><span class="tag warn">ROI coverage</span><span class="tag">normalisation</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t10" onclick="toggle('t10')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Refresh docs to reflect the current architecture</div>
+        <div class="task-sub">Update PROJECT-STATUS.md, README.md, and any handoff docs so they no longer mention BTTS as a current shortlist component, and so they clearly describe the directional engine, directional logging, backtester, and current small-sample caveat.</div>
+        <div class="task-tags"><span class="tag file">PROJECT-STATUS.md</span><span class="tag file">README.md</span><span class="tag file">CHECKLIST.html</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SOON ─────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="badge badge-amber">Soon</span>
+      <span class="section-title">Improve measurement quality and admin visibility</span>
+    </div>
+
+    <div class="task" id="t11" onclick="toggle('t11')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Wire pre-kickoff snapshot into the settler flow</div>
+        <div class="task-sub">The design calls for tip-time, pre-kickoff, and closing snapshots. Tip-time and closing are already conceptually there; pre-kickoff needs wiring so CLV and line-movement analysis are based on real stored points, not assumptions.</div>
+        <div class="task-tags"><span class="tag file">settler.js</span><span class="tag">CLV</span><span class="tag">pre-kickoff snapshot</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t12" onclick="toggle('t12')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Capture U2.5 closing prices properly</div>
+        <div class="task-sub">Over prices are not enough anymore. Unders need the correct under-side closing price and pre-kickoff price captured too, otherwise U2.5 ROI and CLV analysis stay incomplete even if the prediction logic is fine.</div>
+        <div class="task-tags"><span class="tag file">settler.js</span><span class="tag">under prices</span><span class="tag warn">priced ROI depends on this</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t13" onclick="toggle('t13')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Add a tiny read-only admin summary from backtest-report.json</div>
+        <div class="task-sub">Do not build a big analytics dashboard yet. A lightweight internal/admin summary is enough: settled count, O2.5 hit rate, U2.5 hit rate, Brier, priced ROI, priced coverage, and a visible small-sample warning pulled from the saved backtest JSON.</div>
+        <div class="task-tags"><span class="tag file">index.html</span><span class="tag file">backtest-report.json</span><span class="tag">admin only</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t14" onclick="toggle('t14')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Refine shortlist UI without changing model behaviour</div>
+        <div class="task-sub">Clean up flags column width, awkward label wrapping, and any stale BTTS-era wording in the shortlist cards. Keep this purely presentational for now. Do not let UI work leak into scoring logic.</div>
+        <div class="task-tags"><span class="tag file">index.html</span><span class="tag">cosmetic only</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PHASE 2 ───────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="badge badge-blue">Phase 2</span>
+      <span class="section-title">Baseline review first, then xG as a measured layer</span>
+    </div>
+
+    <div class="task" id="t15" onclick="toggle('t15')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Wait for a meaningful settled sample before tuning anything</div>
+        <div class="task-sub">Do not start reweighting probabilities or force new thresholds off a tiny sample. Let settled data accumulate first so calibration, Brier, ROI, and direction splits become at least somewhat stable.</div>
+        <div class="task-tags"><span class="tag warn">gating task</span><span class="tag">needs more settled data</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t16" onclick="toggle('t16')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Select xG source and define the storage schema</div>
+        <div class="task-sub">Decide what xG source will be used, how often it updates, what the legal/technical limits are, and exactly which fields GoalScout will store per team or match. At minimum think in terms of: homeXg, awayXg, combinedXg, homeXga, awayXga, xG trend, and xG-per-shot style fields if obtainable.</div>
+        <div class="task-tags"><span class="tag">xG source</span><span class="tag model">schema design</span><span class="tag warn">decide before coding</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t17" onclick="toggle('t17')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Add xG fields to prediction logging and backtest compatibility</div>
+        <div class="task-sub">Before xG influences scoring, make sure the pipeline can store and report xG inputs. That means logging xG-related fields in prediction rows and making the backtester able to surface them in diagnostic/error output. This keeps future xG changes measurable instead of hand-wavy.</div>
+        <div class="task-tags"><span class="tag file">history.js</span><span class="tag file">backtest.js</span><span class="tag">xG plumbing</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t18" onclick="toggle('t18')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Add xG as a feature-flagged model layer, not a blind replacement</div>
+        <div class="task-sub">Do not rip out the baseline and assume xG is automatically better. Add xG behind a feature flag so the baseline directional model still exists, and the xG-enhanced version can be compared directly in backtesting. Prefer a modular xG/context component over hard-wiring it everywhere.</div>
+        <div class="task-tags"><span class="tag model">feature flag</span><span class="tag file">probability.js</span><span class="tag file">config.js</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PHASE 3 ───────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <span class="badge badge-indigo">Phase 3</span>
+      <span class="section-title">Context layers and match archetypes after xG plumbing exists</span>
+    </div>
+
+    <div class="task" id="t19" onclick="toggle('t19')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Build fixture context layers that can be backtested cleanly</div>
+        <div class="task-sub">Add venue splits, recent scoring form, opponent-adjusted form, and other pre-match context factors as separate modules. These should be additive, inspectable layers — not blended blindly into the base engine. Every layer must be able to show its contribution in logging and backtesting.</div>
+        <div class="task-tags"><span class="tag model">venue</span><span class="tag model">recent form</span><span class="tag model">opponent strength</span><span class="tag warn">must stay measurable</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t20" onclick="toggle('t20')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Add a match-type engine and prove it improves the baseline</div>
+        <div class="task-sub">Use the lessons from recent matches to classify likely game archetypes such as controlled dominance, fake dominance, low-event under profile, high-scoring environment, and control-vs-quality split. Do not promote match types into live decision weight until the enhanced model is compared against the baseline in backtesting.</div>
+        <div class="task-tags"><span class="tag model">match types</span><span class="tag file">backtest.js</span><span class="tag warn">compare before promoting</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Practical rule for future work:</strong> every new model idea should answer four questions before it is trusted: What is the data source? Where is it logged? How is it backtested against baseline? What metric proves it actually helped — hit rate, Brier, ROI, calibration, or error reduction?
+  </div>
+
+  <div class="updated" id="updated-label">No changes saved yet.</div>
+</div>
+
+<script>
+function taskIds() {
+  return Array.from(document.querySelectorAll('.task')).map(el => el.id);
+}
+
+function load() {
+  taskIds().forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const checked = localStorage.getItem('gs-task-' + id) === '1';
+    const cb = el.querySelector('.checkbox');
+    if (checked) {
+      cb.classList.add('checked');
+      el.classList.add('done');
+    }
+  });
+  update();
+}
+
+function toggle(id) {
+  const el = document.getElementById(id);
+  const cb = el.querySelector('.checkbox');
+  const isChecked = cb.classList.toggle('checked');
+  el.classList.toggle('done', isChecked);
+  localStorage.setItem('gs-task-' + id, isChecked ? '1' : '0');
+  update();
+}
+
+function update() {
+  const ids = taskIds();
+  const total = ids.length;
+  const done = ids.filter(id => localStorage.getItem('gs-task-' + id) === '1').length;
+  document.getElementById('prog-fill').style.width = (done / total * 100) + '%';
+  document.getElementById('prog-label').textContent = done + ' of ' + total + ' tasks done';
+  const now = new Date().toLocaleString('en-AU', {
+    timeZone: 'Australia/Melbourne',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  document.getElementById('updated-label').textContent = 'Last updated: ' + now;
+}
+
+load();
+</script>
+</body>
+</html>
