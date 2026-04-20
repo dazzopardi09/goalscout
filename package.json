@@ -8,7 +8,11 @@
     "dev": "node --watch src/index.js",
     "scrape": "node src/scrape-cli.js",
     "backtest": "node src/analysis/backtest.js",
-    "backtest:save": "node src/analysis/backtest.js --output data/history/backtest-report.json"
+    "backtest:save": "node src/analysis/backtest.js --output data/history/backtest-report.json",
+    "replay": "node src/replay/runner.js",
+    "replay:dry": "node src/replay/runner.js --dry-run --limit 10",
+    "replay:settle": "node src/replay/settler.js",
+    "replay:settle:dry": "node src/replay/settler.js --dry-run"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
