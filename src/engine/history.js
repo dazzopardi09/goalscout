@@ -196,17 +196,19 @@ function settlePrediction(fixtureId, market, { homeGoals, awayGoals, closingOdds
       newLines.map(l => JSON.stringify(l)).join('\n') + '\n',
       'utf8'
     );
-
-    appendJSONL(config.RESULTS_FILE, {
-      fixtureId,
-      settledAt: new Date().toISOString(),
-      fullTimeHome: homeGoals,
-      fullTimeAway: awayGoals,
-      totalGoals: (homeGoals ?? 0) + (awayGoals ?? 0),
-      over25: ((homeGoals ?? 0) + (awayGoals ?? 0)) > 2.5,
-      under25: ((homeGoals ?? 0) + (awayGoals ?? 0)) < 2.5,
-      bttsYes: (homeGoals ?? 0) > 0 && (awayGoals ?? 0) > 0,
-    });
+    const existingResults = readJSONL(config.RESULTS_FILE);
+    const alreadyInResults = existingResults.some(r => r.fixtureId === fixtureId);
+    if (!alreadyInResults) {
+      appendJSONL(config.RESULTS_FILE, {
+        fixtureId,
+        settledAt: new Date().toISOString(),
+        fullTimeHome: homeGoals,
+        fullTimeAway: awayGoals,
+        totalGoals: (homeGoals ?? 0) + (awayGoals ?? 0),
+        over25: ((homeGoals ?? 0) + (awayGoals ?? 0)) > 2.5,
+        under25: ((homeGoals ?? 0) + (awayGoals ?? 0)) < 2.5,
+      });
+    }
   }
 
   return updated;
