@@ -17,8 +17,7 @@ module.exports = {
   DETAILS_DIR:      path.join(DATA_DIR, 'match-details'),
   ODDS_FILE:        path.join(DATA_DIR, 'odds.json'),
 
-  // ── Historical logging (lean data model) ──────────────────
-  // These files ACCUMULATE — they are NOT overwritten on refresh.
+  // ── Historical logging ────────────────────────────────────
   HISTORY_DIR:      path.join(DATA_DIR, 'history'),
   PREDICTIONS_FILE: path.join(DATA_DIR, 'history', 'predictions.jsonl'),
   RESULTS_FILE:     path.join(DATA_DIR, 'history', 'results.jsonl'),
@@ -33,7 +32,10 @@ module.exports = {
   // ── The Odds API ──────────────────────────────────────────
   ODDS_API_KEYS:  (process.env.ODDS_API_KEYS || '').split(',').filter(Boolean),
   ODDS_REGIONS:   process.env.ODDS_REGIONS || 'au',
-  ODDS_MARKETS:   'totals,btts',
+  // 'btts' removed — the-odds-api.js only parses totals outcomes anyway,
+  // so fetching btts was burning quota with no effect. history.js still
+  // reads old btts records from predictions.jsonl for backwards compatibility.
+  ODDS_MARKETS:   'totals',
 
   // ── Betfair API (phase 3) ─────────────────────────────────
   BETFAIR_APP_KEY: process.env.BETFAIR_APP_KEY || '',
@@ -45,37 +47,32 @@ module.exports = {
   USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 
   // ── Schedules ─────────────────────────────────────────────
-  CRON_SCHEDULE:    '5 */6 * * *',   // main refresh — every 6 hours
-  PREKICKOFF_CRON:  '*/30 * * * *',  // pre-KO odds — every 30 minutes
-  SETTLE_CRON:      '15 */3 * * *',  // settlement check — every 3 hours
+  CRON_SCHEDULE:   '5 */6 * * *',
+  PREKICKOFF_CRON: '*/30 * * * *',
+  SETTLE_CRON:     '15 */3 * * *',
 
   // ── Shortlist scoring thresholds ──────────────────────────
   THRESHOLDS: {
-    // Minimum % to generate a flag
-    O25_FLAG:   55,
-    BTTS_FLAG:  55,
-    TG_FLAG:    2.8,
+    // Minimum games played to trust stats
+    MIN_GP: 5,
+
+    // avgTG floor for single-team TG flag (fallback when combined not available)
+    TG_FLAG: 2.8,
+
+    // PPG thresholds for mismatch signal
     PPG_STRONG: 2.0,
     PPG_WEAK:   1.0,
 
-    // Negative flag thresholds (harsher)
-    FTS_HIGH:   35,
-    CS_HIGH:    35,
+    // Minimum winning-direction score to appear on the shortlist.
+    // Score of 4 requires genuine signal — two moderate flags or one strong one.
+    // Expect ~6–10 shortlisted matches per cycle at this setting.
+    // Raise to 5 for tighter filtering, lower to 3 for broader.
+    MIN_WINNING_SCORE: 4,
 
-    // Minimum games played to trust stats
-    MIN_GP:     5,
-
-    // Minimum composite score for shortlist
-    MIN_SCORE:  5,
-
-    // Category gate
-    MIN_SINGLE_CAT: 4,
-    MIN_DUAL_CAT:   2,
-
-    // NEW: Minimum model probability for the recommended direction.
-    // Matches below this are excluded from the shortlist even if
-    // they pass the flag score gate. Removes the 47-56% noise.
-    // Set to 0 to disable.
+    // Minimum model probability for the recommended direction.
+    // Applied in orchestrator AFTER analysis, not in buildShortlist.
+    // O2.5: requires P(O2.5) >= MIN_PROB
+    // U2.5: requires 1 - P(O2.5) >= MIN_PROB
     MIN_PROB: 0.60,
   },
 

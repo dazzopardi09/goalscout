@@ -9,7 +9,7 @@
 //      → direction with higher score wins → one call per match
 //   4. Fetch Over AND Under odds for shortlisted matches
 //   5. Attach correct odds based on match direction
-//   6. Run probability engine → log predictions
+//   6. Run probability engine, apply floor, THEN log predictions
 //   7. Scrape match details for top shortlisted
 //   8. Write to disk
 // ─────────────────────────────────────────────────────────────
@@ -131,12 +131,8 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
 
     const { all: scored, shortlisted } = buildShortlist(matchesToScore, leagueStatsMap);
 
-    // Count by direction for logging
-    const o25Count = shortlisted.filter(m => m.direction === 'o25').length;
-    const u25Count = shortlisted.filter(m => m.direction === 'u25').length;
-    console.log(`[orchestrator] shortlisted: ${shortlisted.length} (${o25Count} O2.5, ${u25Count} U2.5)`);
+    console.log(`[orchestrator] shortlisted before prob filter: ${shortlisted.length}`);
 
-    // Tag day
     for (const m of [...scored, ...shortlisted]) {
       m.day = todayMatches.some(t => t.id === m.id) ? 'Today' : 'Tomorrow';
     }
@@ -153,7 +149,6 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
           if (odds) {
             m.odds = odds;
             matched++;
-            // Log which price will be used based on direction
             const relevantOdds = m.direction === 'u25' ? odds.u25 : odds.o25;
             if (relevantOdds) {
               console.log(`[orchestrator] ${m.direction.toUpperCase()} ${m.homeTeam} vs ${m.awayTeam}: ${relevantOdds.price} (${relevantOdds.bookmaker})`);
@@ -168,24 +163,26 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       }
     }
 
-    // ── Step 7: Probability engine + prediction logging ───
+    // ── Step 7: Probability engine + probability floor ────
+    // IMPORTANT: logPrediction is called AFTER the floor filter.
+    // Only matches that survive to the final visible shortlist get logged.
+    // Logging before the filter pollutes history with sub-threshold predictions.
     refreshState.progress = 'Calculating probabilities...';
     const minProb = config.THRESHOLDS?.MIN_PROB || 0;
- 
+
+    // First pass: attach analysis to all shortlisted matches
     for (const m of shortlisted) {
       try {
         const analysis = analyseMatch(m, leagueStatsMap[m.leagueSlug] || {});
         m.analysis = analysis;
-        logPrediction(m, analysis);
       } catch (e) {
         console.warn(`[orchestrator] probability failed for ${m.id}:`, e.message);
       }
     }
- 
-    // Apply probability floor AFTER analysis runs.
-    // For O2.5 direction: filter out if P(O2.5) < MIN_PROB
-    // For U2.5 direction: filter out if (1 - P(O2.5)) < MIN_PROB
-    // i.e. a U2.5 match needs P(O2.5) < (1 - MIN_PROB) to be confident.
+
+    // Second pass: apply probability floor, splice out failures
+    // O2.5: P(O2.5) >= MIN_PROB
+    // U2.5: P(U2.5) = 1 - P(O2.5) >= MIN_PROB
     const beforeFilter = shortlisted.length;
     if (minProb > 0) {
       for (let i = shortlisted.length - 1; i >= 0; i--) {
@@ -196,24 +193,39 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
         if (dirProb < minProb) shortlisted.splice(i, 1);
       }
     }
- 
+
+    // Third pass: log only final survivors
+    for (const m of shortlisted) {
+      if (!m.analysis) continue;
+      try {
+        logPrediction(m, m.analysis);
+      } catch (e) {
+        console.warn(`[orchestrator] logPrediction failed for ${m.id}:`, e.message);
+      }
+    }
+
     const withProbs = shortlisted.filter(m => m.analysis).length;
-    const withOdds = shortlisted.filter(m => {
+    const withOdds  = shortlisted.filter(m => {
       const a = m.analysis;
       return a && (
         (m.direction === 'o25' && a.o25?.marketOdds != null) ||
         (m.direction === 'u25' && a.u25?.marketOdds != null)
       );
     }).length;
-    const withEdge = shortlisted.filter(m => {
+    const withEdge  = shortlisted.filter(m => {
       const a = m.analysis;
       return a && (
         (m.direction === 'o25' && a.o25?.edge != null) ||
         (m.direction === 'u25' && a.u25?.edge != null)
       );
     }).length;
- 
+
     console.log(`[orchestrator] probabilities: ${withProbs} calculated, ${withOdds} with odds, ${withEdge} with edge, ${beforeFilter - shortlisted.length} filtered below MIN_PROB (${minProb * 100}%)`);
+
+    // Recalculate direction counts after the probability floor has been applied
+    const o25Count = shortlisted.filter(m => m.direction === 'o25').length;
+    const u25Count = shortlisted.filter(m => m.direction === 'u25').length;
+    console.log(`[orchestrator] shortlisted: ${shortlisted.length} (${o25Count} O2.5, ${u25Count} U2.5)`);
 
     // ── Step 8: Match details for top shortlisted ─────────
     if (scrapeDetails && shortlisted.length > 0) {
@@ -236,33 +248,33 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     writeJSON(config.DISCOVERED_FILE, scored);
     writeJSON(config.SHORTLIST_FILE, shortlisted);
     writeJSON(config.META_FILE, {
-      lastRefresh: new Date().toISOString(),
-      totalScraped: allMatches.length,
-      bettableCount: matchesToScore.length,
-      scoredCount: scored.length,
-      shortlistCount: shortlisted.length,
+      lastRefresh:      new Date().toISOString(),
+      totalScraped:     allMatches.length,
+      bettableCount:    matchesToScore.length,
+      scoredCount:      scored.length,
+      shortlistCount:   shortlisted.length,
       o25Count,
       u25Count,
-      bettableLeagues: bettableSlugs.length,
-      leaguesOnPage: todaySlugs.length,
+      bettableLeagues:  bettableSlugs.length,
+      leaguesOnPage:    todaySlugs.length,
       leagueStatsFound: Object.keys(leagueStatsMap).length,
     });
 
-    refreshState.status = 'done';
-    refreshState.lastRefresh = new Date().toISOString();
-    refreshState.matchCount = scored.length;
-    refreshState.shortlistCount = shortlisted.length;
+    refreshState.status        = 'done';
+    refreshState.lastRefresh   = new Date().toISOString();
+    refreshState.matchCount    = scored.length;
+    refreshState.shortlistCount= shortlisted.length;
     refreshState.bettableCount = matchesToScore.length;
-    refreshState.progress = 'Complete';
-    refreshState.lastError = null;
+    refreshState.progress      = 'Complete';
+    refreshState.lastError     = null;
 
     console.log(`[orchestrator] done. ${allMatches.length} scraped → ${matchesToScore.length} bettable → ${shortlisted.length} shortlisted (${o25Count} O2.5, ${u25Count} U2.5)`);
     return refreshState;
 
   } catch (err) {
-    refreshState.status = 'error';
+    refreshState.status    = 'error';
     refreshState.lastError = err.message;
-    refreshState.progress = `Error: ${err.message}`;
+    refreshState.progress  = `Error: ${err.message}`;
     console.error('[orchestrator] refresh failed:', err);
     return refreshState;
   }
