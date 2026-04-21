@@ -15,18 +15,19 @@ const preds = readJsonl(PREDICTIONS_FILE);
 const results = readJsonl(RESULTS_FILE);
 
 const resultMap = new Map(
-  results.map(r => [`${r.fixtureId}|${r.market}|${r.replayRunId}`, r])
+  results.map(r => [`${r.leagueKey}|${r.fixtureId}|${r.market}|${r.replayRunId}`, r])
 );
 
 const rows = [];
 
 for (const p of preds) {
-  const key = `${p.fixtureId}|${p.market}|${p.replayRunId}`;
+  const key = `${p.leagueKey}|${p.fixtureId}|${p.market}|${p.replayRunId}`;
   const r = resultMap.get(key);
   if (!r) continue;
 
   rows.push({
     fixtureId: p.fixtureId,
+    leagueKey: p.leagueKey,
     direction: p.direction,
 
     homeO25: p.inputs.homeO25pct,

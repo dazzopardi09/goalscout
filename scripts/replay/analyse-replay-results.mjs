@@ -37,12 +37,12 @@ const predictions = readJsonl(PREDICTIONS_FILE);
 const results = readJsonl(RESULTS_FILE);
 
 const resultMap = new Map(
-  results.map(r => [`${r.fixtureId}|${r.market}|${r.replayRunId}`, r])
+  results.map(r => [`${r.leagueKey}|${r.fixtureId}|${r.market}|${r.replayRunId}`, r])
 );
 
 const rows = predictions
   .map(p => {
-    const key = `${p.fixtureId}|${p.market}|${p.replayRunId}`;
+    const key = `${p.leagueKey}|${p.fixtureId}|${p.market}|${p.replayRunId}`;
     const r = resultMap.get(key);
     if (!r) return null;
     return {
@@ -64,6 +64,11 @@ for (const grade of ['A+', 'A', 'B', '-']) {
 console.log('\n=== By direction ===');
 for (const direction of ['o25', 'u25']) {
   summarise(`Direction ${direction}`, rows.filter(r => r.direction === direction));
+}
+
+console.log('\n=== By league ===');
+for (const leagueKey of [...new Set(rows.map(r => r.leagueKey).filter(Boolean))].sort()) {
+  summarise(`League ${leagueKey}`, rows.filter(r => r.leagueKey === leagueKey));
 }
 
 console.log('\n=== By modelProbability bucket ===');

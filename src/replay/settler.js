@@ -185,6 +185,7 @@ function run() {
     const result = {
       // Identity
       fixtureId:    pred.fixtureId,
+      leagueKey:    pred.leagueKey || fixture.leagueKey,
       replayRunId:  pred.replayRunId || null,
 
       // Match info (for readability when inspecting the file)

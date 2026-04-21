@@ -91,6 +91,7 @@ function buildPrediction(fixture, features, scoreResult, o25prob, u25prob, repla
   return {
     // Identity — matches live schema
     fixtureId:           fixture.fixtureId,
+    leagueKey:           fixture.leagueKey,
     predictionDate:      fixture.kickoffUtc.slice(0, 10),
     predictionTimestamp: new Date().toISOString(),
     modelVersion:        'baseline-v1',
