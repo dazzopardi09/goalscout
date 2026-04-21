@@ -1151,3 +1151,225 @@ C) move to xG for structurally weak leagues
 
 Current expectation:
 - A-League path is now mature enough to justify an EV / ROI layer
+
+---
+
+## Phase: Per-Season Discrimination Check (A-League O2.5)
+
+### Objective
+Test whether the model’s probability ordering / discrimination is stable across seasons, independent of the live calibration map.
+
+This was done by fitting Platt scaling separately on each season’s raw O2.5 model probabilities using the full season sample.
+
+This was a diagnostic step only:
+- not a deployable calibration map
+- not a train/test exercise
+- purpose was to measure whether raw model probability retains a meaningful monotonic relationship to outcomes in each season
+
+---
+
+### Per-Season Platt Results
+
+| Season   | A     | B      | n   |
+|----------|-------|--------|-----|
+| 2024–25  | 0.965 | -0.316 | 100 |
+| 2023–24  | 0.611 | -0.022 | 103 |
+| 2022–23  | 0.559 |  0.002 | 99  |
+
+---
+
+### Interpretation
+
+#### 1. Discrimination exists in all seasons
+All three seasons show positive A values well above zero.
+
+Interpretation:
+- raw model probabilities are not random
+- there is real ordering signal in all seasons
+
+---
+
+#### 2. Discrimination strength is not stable
+A values vary materially:
+
+- 2024–25: strong discrimination (~0.97)
+- 2023–24: moderate discrimination (~0.61)
+- 2022–23: moderate discrimination (~0.56)
+
+Interpretation:
+- signal strength changes across seasons
+- model is materially stronger in some seasons than others
+- this makes the model unstable as a deployable betting system in current form
+
+---
+
+#### 3. This explains the hit-rate / ROI mismatch
+Across seasons:
+- hit rate remained relatively stable
+- ROI varied sharply
+
+Interpretation:
+- model continues to identify broadly similar match types
+- but when discrimination weakens, the model becomes overconfident
+- this causes “positive edge” bets to fail when compared against market prices
+
+---
+
+#### 4. Core issue is not calibration alone
+Calibration improved probability honesty, but this test shows that the underlying model strength is season-dependent.
+
+Interpretation:
+- the main limitation is now the stability of the underlying signal
+- not just the final probability transformation
+
+---
+
+### Updated Conclusion
+
+The A-League model is now best described as:
+
+→ **real but unstable**
+
+More specifically:
+- there is genuine cross-season O2.5 signal
+- but discrimination is not strong enough or consistent enough to justify confident betting deployment yet
+
+This means:
+- A-League O2.5 remains the strongest segment found so far
+- but it should not yet be treated as a fully robust betting model
+
+---
+
+### Updated Best Understanding
+
+Current model behaviour:
+- calibrated probabilities can be useful
+- O2.5 signal is real
+- however, raw goal-based features appear to produce season-dependent signal strength
+- this likely explains why ROI can swing sharply even when hit rate remains similar
+
+---
+
+### Next Decision Point
+
+Primary question now:
+
+- continue trying to extract EV from the current model
+- or improve the model itself so discrimination becomes more stable across seasons
+
+Current expectation:
+- the next correct step is likely a feature/model upgrade rather than further EV threshold tuning
+
+---
+
+## Phase: Historical Odds / EV Testing (A-League O2.5)
+
+### Objective
+Test whether the calibrated A-League O2.5 model beats the market, not just outcomes.
+
+Historical closing odds were sourced from the AusSportsBetting A-League dataset and matched to replay predictions by:
+- date
+- home team
+- away team
+
+Odds used:
+- O/U 2.5 closing prices
+- devigged implied market probabilities
+- matched coverage only
+
+---
+
+### EV / ROI Results (matched odds sample)
+
+| Season   | Bets | Coverage | ROI (all) | ROI (edge > 5) | Bets (edge > 5) |
+|----------|------|----------|-----------|----------------|-----------------|
+| 2022–23  | 87   | 87.9%    | +6.63%    | +12.96%        | 60              |
+| 2023–24  | 88   | 85.4%    | -11.65%   | -16.71%        | 27              |
+| 2024–25  | 80   | 80.0%    | -5.35%    | +11.51%        | 32              |
+
+---
+
+### Per-Season Discrimination on Matched Sample
+
+| Season   | A     | Bets |
+|----------|-------|------|
+| 2022–23  | 0.479 | 87   |
+| 2023–24  | 0.526 | 88   |
+| 2024–25  | 1.164 | 80   |
+
+Interpretation:
+- discrimination strength varies materially by season
+- 2024–25 shows much stronger ordering than 2022–23 / 2023–24
+- this likely explains why edge filtering only works in some seasons
+
+---
+
+### Key Findings
+
+#### 1. Outcome accuracy is not enough
+The model showed consistent O2.5 hit rates across seasons, but ROI did not hold across seasons.
+
+Interpretation:
+- being directionally right is not sufficient
+- model must consistently outperform market pricing, not just outcomes
+
+---
+
+#### 2. Edge filtering is not robust enough
+`edge > 5%` performed well in 2 seasons but failed badly in 2023–24.
+
+Interpretation:
+- edge filtering helps only when underlying discrimination is strong
+- edge calculation becomes unreliable when the model is weak / overconfident
+
+---
+
+#### 3. Current raw-goals model has reached its ceiling
+The project now has enough evidence to say:
+- the model contains real signal
+- but signal strength is season-dependent
+- current raw-goals features do not produce a stable betting model across seasons
+
+---
+
+### Final Conclusion of Current Model Phase
+
+The current A-League raw-goals O2.5 model is:
+
+- informative
+- partially predictive
+- but not robust enough as a stable betting model
+
+This phase established:
+- replay pipeline works
+- calibration pipeline works
+- historical odds / EV pipeline works
+- market comparison framework works
+
+However:
+- the model itself is not stable enough across seasons to justify further optimisation on raw-goal features
+
+---
+
+### Strategic Next Step
+
+Do **not** keep tuning this raw-goals model further.
+
+Instead, build a **new xG-based signal/model independently** from the current raw-goals model.
+
+Rationale:
+- keep models modular
+- compare raw-goals vs xG fairly
+- allow league-specific usage later
+- optionally combine / ensemble only after independent testing
+
+Proposed structure:
+
+- raw-goals model → existing signal
+- xG model → new independent signal
+- blended / ensemble model → optional future phase
+
+This allows:
+- A-League to continue using the existing raw-goals signal if useful
+- other leagues (EPL, Bundesliga, etc.) to test xG independently
+- future comparison or combination without contaminating the experiments
