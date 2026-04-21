@@ -1,7 +1,7 @@
 'use strict';
 
 const fs = require('fs');
-const { HISTORICAL_LEAGUES, getHistoricalFilePath } = require('./historical-config');
+const { HISTORICAL_LEAGUES, getHistoricalFilePath } = require('./aleague-historical-config');
 
 function readFixturesFile(filePath) {
   if (!fs.existsSync(filePath)) return [];

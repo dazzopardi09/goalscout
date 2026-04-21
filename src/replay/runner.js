@@ -37,6 +37,33 @@ const { scoreMatch }              = require('../engine/shortlist');
 const { estimateO25, fairOdds }   = require('../engine/probability');
 const { loadHistoricalFixtures }  = require('./load-historical-fixtures');
 
+function loadCalibrationMaps() {
+  if (!fs.existsSync(CALIBRATION_FILE)) return {};
+  return JSON.parse(fs.readFileSync(CALIBRATION_FILE, 'utf8'));
+}
+
+function sigmoid(x) {
+  return 1 / (1 + Math.exp(-x));
+}
+
+function logit(p) {
+  const eps = 1e-6;
+  const pp = Math.min(Math.max(p, eps), 1 - eps);
+  return Math.log(pp / (1 - pp));
+}
+
+function applyCalibration(rawProb, leagueKey, market, calibrationMaps) {
+  if (typeof rawProb !== 'number') return rawProb;
+
+  const cfg = calibrationMaps[leagueKey];
+  if (!cfg) return rawProb;
+  if (cfg.market !== market) return rawProb;
+
+  return Math.round(
+    sigmoid((cfg.A * logit(rawProb)) + cfg.B) * 10000
+  ) / 10000;
+}
+
 // ── CLI args ──────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
@@ -58,6 +85,7 @@ const DATA_DIR         = process.env.DATA_DIR || path.join(__dirname, '..', '..'
 // const FIXTURES_FILE    = path.join(DATA_DIR, 'historical', 'epl_2025_26_fixtures.json');
 const REPLAY_DIR       = path.join(DATA_DIR, 'replay');
 const PREDICTIONS_FILE = path.join(REPLAY_DIR, 'replay-predictions.jsonl');
+const CALIBRATION_FILE = path.join(DATA_DIR, 'calibration', 'calibration-maps.json');
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -85,7 +113,7 @@ function loadFixtures() {
  * status is always "pending" — settlement is separate.
  * Matches live prediction schema with replay-only additions.
  */
-function buildPrediction(fixture, features, scoreResult, o25prob, u25prob, replayRunId) {
+function buildPrediction(fixture, features, scoreResult, rawProb, o25prob, u25prob, replayRunId) {
   const isU25 = scoreResult.direction === 'u25';
   const dirProb = isU25 ? u25prob : o25prob;
   const fair    = dirProb != null ? fairOdds(dirProb) : null;
@@ -115,6 +143,7 @@ function buildPrediction(fixture, features, scoreResult, o25prob, u25prob, repla
 
     // Probabilities
     modelProbability: dirProb   != null ? Math.round(dirProb * 10000) / 10000 : null,
+    rawModelProbability: rawProb != null ? Math.round(rawProb * 10000) / 10000 : null,
     fairOdds:         fair,
 
     // Odds — not available in replay
@@ -169,6 +198,7 @@ async function run() {
   console.log(`  Output:     ${DRY_RUN ? 'stdout only' : PREDICTIONS_FILE}`);
   console.log('');
 
+  const calibrationMaps = loadCalibrationMaps();
   const fixtures = loadHistoricalFixtures({ leagueKey: LEAGUE_KEY });
   const completed = fixtures.filter(f => f.status === 'completed');
   console.log(`  Fixtures total:    ${fixtures.length}`);
@@ -223,11 +253,20 @@ async function run() {
     }
 
     // Estimate probabilities using the live probability engine
-    const o25prob = estimateO25(matchObj, {});
-    if (o25prob == null) {
+    const rawO25prob = estimateO25(matchObj, {});
+    if (rawO25prob == null) {
       skippedNoProb++;
       continue;
     }
+
+    const calibratedO25prob = applyCalibration(
+      rawO25prob,
+      fixture.leagueKey,
+      'over_2.5',
+      calibrationMaps
+    );
+
+    const o25prob = calibratedO25prob;
     const u25prob = Math.round((1 - o25prob) * 10000) / 10000;
 
     // Assemble prediction
@@ -235,6 +274,7 @@ async function run() {
       fixture,
       features,
       scoreResult,
+      rawO25prob,
       o25prob,
       u25prob,
       replayRunId

@@ -8,9 +8,18 @@ if (!API_KEY) {
   throw new Error('Missing API_FOOTBALL_KEY');
 }
 
-const SEASON = process.argv[2] || '2025';
+const SEASON = process.argv[2] || '2024';
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
-const OUT_FILE = path.join(DATA_DIR, 'historical', 'a_league_2024_25_fixtures.json');
+
+const nextYearShort = String(Number(SEASON) + 1).slice(2);
+const seasonLabelFile = `${SEASON}_${nextYearShort}`;
+const seasonLabelDisplay = `${SEASON}-${nextYearShort}`;
+
+const OUT_FILE = path.join(
+  DATA_DIR,
+  'historical',
+  `a_league_${seasonLabelFile}_fixtures.json`
+);
 
 async function apiGet(endpoint, params = {}) {
   const url = new URL(`${BASE_URL}${endpoint}`);
@@ -62,9 +71,12 @@ async function resolveALeague() {
 
   const match = leagues.find(l => {
     const name = l.league?.name?.toLowerCase() || '';
+    const country = l.country?.name;
+
     return (
+      country === 'Australia' &&
       name.includes('a-league') &&
-      (l.country?.name === 'Australia')
+      !name.includes('women')
     );
   });
 
@@ -97,7 +109,7 @@ async function main() {
       fixtureId: buildFixtureId('a_league', kickoffUtc, homeTeam, awayTeam),
       leagueKey: 'a_league',
       leagueName,
-      season: '2024-25',
+      season: seasonLabelDisplay,
       kickoffUtc,
       homeTeam,
       awayTeam,
