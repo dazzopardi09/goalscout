@@ -526,3 +526,246 @@ The project now has:
 - a validated regression-testing workflow
 - evidence that raw goal-derived features are too noisy
 - a clear next data upgrade path: **xG**
+
+---
+
+## Multi-League Replay Testing (Feature Validation Across Leagues)
+
+### Purpose
+Evaluate whether the current model performs better outside EPL and identify league-dependent signal.
+
+---
+
+### Leagues tested
+- EPL (baseline)
+- A-League
+- Eredivisie
+- Bundesliga
+- Danish Superliga
+
+---
+
+### Summary Results
+
+| League            | Bets | Hit Rate | Brier  | O2.5 | U2.5 |
+|------------------|------|----------|--------|------|------|
+| EPL              | 261  | 49.8%    | 0.2826 | ~53% | ~47% |
+| A-League         | 136  | 58.1%    | 0.2639 | 63.4% | 42.9% |
+| Eredivisie       | 246  | 50.4%    | 0.2728 | 56.8% | 43.8% |
+| Bundesliga       | 252  | 51.2%    | 0.2630 | 59.3% | 41.1% |
+| Danish Superliga | 145  | 52.4%    | 0.2585 | 59.8% | 37.5% |
+
+---
+
+### Key Findings
+
+#### 1. Strong directional bias
+- O2.5 consistently outperforms U2.5 across all leagues
+- U2.5 is consistently weak (≈37–47%)
+- Model behaves like an **over classifier**, not a balanced predictor
+
+---
+
+#### 2. League dependency confirmed
+- A-League shows strongest raw edge (58.1%)
+- Other leagues cluster around ~50–52%
+- Model performance is **not transferable across leagues**
+
+---
+
+#### 3. Probability signal is partially real
+- Higher probability buckets (0.70+) perform better across multiple leagues
+- Indicates underlying signal exists but is weak and noisy
+
+---
+
+#### 4. Grade system issues persist
+- A+ consistently unreliable across all leagues
+- A grade sometimes useful (e.g. Danish ~59.5%)
+- B grade inconsistent
+- Grade system is not stable across environments
+
+---
+
+#### 5. Consistent high-performing segments
+Across multiple leagues:
+
+- O2.5 only → ~57–63%
+- A + O2.5 → ~58–65%
+- "No - grade + O2.5" → ~58–64%
+
+These segments show:
+- some signal concentration
+- but not strong enough to confirm a robust edge
+
+---
+
+### Interpretation
+
+- Model contains **weak but real signal**
+- Signal is primarily driven by **goal environment (overs)**
+- Current feature set behaves as a noisy proxy for total goals
+- League context influences signal strength significantly
+
+---
+
+### Updated Conclusion
+
+Multi-league testing confirms:
+
+- The model is **not fundamentally broken**, but:
+  - signal is weak
+  - heavily dependent on league context
+- Raw goal-based features do not generalise well
+- Improvements via weighting, filtering, or league selection alone are limited
+
+---
+
+### Implication for next phase
+
+The limitation is now clearly **data representation**, not:
+- pipeline
+- replay system
+- league coverage
+
+Next step should focus on:
+
+→ **Replacing raw goal features with xG-based features**
+
+This is expected to:
+- reduce noise
+- improve stability of relationships
+- provide a better foundation for probabilistic modelling
+
+---
+
+### Status
+
+Multi-league validation complete.
+
+Key takeaway:
+- current model ≈ weak over classifier
+- xG integration is the next required step
+
+---
+
+## Multi-League Replay (10-Game Window Validation)
+
+### Purpose
+Re-test model performance across leagues using a longer rolling window (5 → 10 games) to evaluate noise vs signal.
+
+---
+
+### Leagues Tested
+- EPL
+- A-League
+- Eredivisie
+- Bundesliga
+- Danish Superliga
+
+---
+
+### Results Summary
+
+| League            | Bets | Hit Rate | O2.5 | Brier  | Verdict |
+|------------------|------|----------|------|--------|--------|
+| EPL              | 259  | 47.5%    | 51.2% | 0.2732 | No signal |
+| A-League         | 132  | 60.6%    | 66.0% | 0.2402 | Strong |
+| Danish Superliga | 135  | 56.3%    | 62.2% | 0.2492 | Moderate |
+| Bundesliga       | 252  | 55.7%    | 61.3% | 0.2548 | Usable |
+| Eredivisie       | 246  | 51.0%    | 56.7% | 0.2548 | Weak |
+
+---
+
+### Key Findings
+
+#### 1. League dependency confirmed
+- Model performance varies significantly by league
+- A-League strongest, EPL weakest
+- No universal model behaviour
+
+---
+
+#### 2. Model behaves as Over 2.5 classifier
+- O2.5 consistently outperforms U2.5 across all leagues
+- U2.5 consistently underperforms (~37–44%)
+- Model is not balanced across markets
+
+---
+
+#### 3. Rolling window impact (5 → 10 games)
+
+- Improves performance in strong leagues:
+  - A-League: 58.1% → 60.6%
+  - Danish: 52.4% → 56.3%
+- No improvement (or worse) in weak leagues:
+  - EPL declines further
+  - Eredivisie remains near noise
+
+Conclusion:
+- Window size reduces noise
+- Does not create signal where none exists
+
+---
+
+#### 4. Signal exists but is unstable
+
+- Strong segments appear in:
+  - A-League (A-grade ~70%)
+  - Bundesliga (mid-probability buckets)
+  - Danish Superliga (consistent O2.5 edge)
+
+- However:
+  - signal is inconsistent across leagues
+  - probability calibration remains unreliable
+
+---
+
+#### 5. Feature limitations evident
+
+- Current inputs (goals, O2.5%, CS%, FTS%) are:
+  - lagging indicators
+  - outcome-based
+  - noisy proxies for underlying performance
+
+- Even with improved windowing:
+  - signal remains weak or unstable in several leagues
+
+---
+
+### Updated Conclusion
+
+- Model contains real but weak signal
+- Signal is:
+  - league-dependent
+  - primarily driven by overs
+- Rolling window improves stability but not fundamental performance
+- Current feature set is insufficient for robust modelling
+
+---
+
+### Implication
+
+Primary bottleneck is likely:
+
+→ **feature quality, not pipeline or windowing**
+
+---
+
+### Next Step (Pending Validation)
+
+- Evaluate moving to xG-based features
+- Re-test model using:
+  - longer rolling window (10 games)
+  - improved inputs (expected goals instead of raw goals)
+
+---
+
+### Status
+
+Multi-league + window validation complete.
+
+Key takeaway:
+- Current model = weak, league-dependent over signal
+- Not robust enough in current form
+- Ready for next phase (feature upgrade)

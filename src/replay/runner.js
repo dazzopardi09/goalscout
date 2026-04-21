@@ -192,7 +192,7 @@ async function run() {
     // Build point-in-time features (no-leakage guaranteed by replay-metrics)
     let features;
     try {
-      features = await buildNormalisedFeatures(fixtures, fixture, 5);
+      features = await buildNormalisedFeatures(fixtures, fixture, 10);
     } catch (err) {
       console.error(`  [skip] ${fixture.homeTeam} vs ${fixture.awayTeam}: feature build failed — ${err.message}`);
       continue;
