@@ -769,3 +769,128 @@ Key takeaway:
 - Current model = weak, league-dependent over signal
 - Not robust enough in current form
 - Ready for next phase (feature upgrade)
+
+---
+
+## Controlled Test: Per-League O2.5 Calibration Feasibility
+
+### Purpose
+Test whether the current model’s O2.5 probabilities can be improved via post-hoc calibration, rather than requiring immediate feature replacement.
+
+Method used:
+- Platt scaling fitted per league
+- O2.5 predictions only
+- calibration inputs:
+  - raw `modelProbability`
+  - settled replay outcomes
+
+This was treated as a diagnostic test of **probability ordering quality**, not a final production implementation.
+
+---
+
+### Results
+
+| League      | Sample | A      | B      | Interpretation |
+|-------------|--------|--------|--------|----------------|
+| A-League    | 100    | 0.965  | -0.316 | Strong / usable |
+| Bundesliga  | 160    | -0.026 | 0.444  | Weak / not useful |
+
+---
+
+### Interpretation of calibration coefficients
+
+Platt scaling form:
+
+`calibrated_p = sigmoid(A * logit(rawProb) + B)`
+
+Meaning:
+- `A > 0` and reasonably close to 1:
+  - probabilities are sensibly ordered
+  - calibration can improve probability honesty
+- `A ≈ 0`:
+  - raw probabilities contain little useful ranking information
+  - calibration collapses toward a near-constant estimate
+- `A < 0`:
+  - indicates poor or inverted ordering
+  - calibration is unlikely to rescue the model
+
+---
+
+### A-League
+
+Result:
+- `A = 0.965`
+- `B = -0.316`
+
+Interpretation:
+- O2.5 probabilities are already well ordered
+- Model appears to have **real discriminative signal**
+- Main issue is slight probability shift / overstatement of base probability
+- Calibration is likely a valid next step here
+
+Conclusion:
+- A-League is currently the strongest candidate for a calibrated “working” model segment
+
+---
+
+### Bundesliga
+
+Result:
+- `A = -0.026`
+- `B = 0.444`
+
+Interpretation:
+- Raw probability ordering is weak or effectively non-informative
+- Calibration would likely collapse toward a league-level constant probability
+- This suggests that, for Bundesliga, the current model does **not** have strong enough probability structure for calibration to add much value
+
+Conclusion:
+- Bundesliga is not a strong calibration-first candidate in current form
+
+---
+
+### Updated cross-league understanding
+
+The project now appears to have **different bottlenecks by league**:
+
+- **A-League**
+  - signal exists
+  - calibration likely worthwhile
+
+- **Bundesliga**
+  - some directional signal exists
+  - probability ordering too weak for calibration-first approach
+
+- **EPL**
+  - no meaningful signal
+  - feature quality remains the core problem
+
+This suggests the model should no longer be treated as one global problem.
+
+---
+
+### Updated conclusion
+
+Previous conclusion:
+- next step should likely be xG integration
+
+Updated conclusion:
+- this is still likely true for weak-signal leagues (especially EPL)
+- however, A-League may justify a calibration-first step before xG
+
+Refined view:
+- **feature upgrade** remains the likely long-term next phase
+- **calibration** may be a valid short-term optimisation for leagues where discrimination already exists
+
+---
+
+### Status
+
+Calibration feasibility has now been partially tested.
+
+Current best understanding:
+- A-League may already contain a usable O2.5 model with better-calibrated probabilities
+- other leagues remain weaker and less calibration-friendly
+- next project decision should be:
+  - whether to pursue a calibrated A-League path first
+  - or move directly to xG for broader model improvement

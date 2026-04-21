@@ -12,6 +12,7 @@ const HISTORICAL_LEAGUES = [
   { leagueKey: 'belgian_pro_league', file: 'belgian_pro_league_2024_25_fixtures.json' },
   { leagueKey: 'austrian_bundesliga', file: 'austrian_bundesliga_2024_25_fixtures.json' },
   { leagueKey: 'bundesliga', file: 'bundesliga_2024_25_fixtures.json' },
+  { leagueKey: 'eerste_divisie', file: 'eerste_divisie_2024_25_fixtures.json' },
 ];
 
 function getHistoricalFilePath(file) {
