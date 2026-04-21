@@ -32,6 +32,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { loadHistoricalFixtures } = require('./load-historical-fixtures');
 
 // ── CLI args ──────────────────────────────────────────────────
 
@@ -49,7 +50,6 @@ const RUN_ID_FILTER = getArg('--run-id');
 // ── Paths ─────────────────────────────────────────────────────
 
 const DATA_DIR           = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
-const FIXTURES_FILE      = path.join(DATA_DIR, 'historical', 'epl_2025_26_fixtures.json');
 const REPLAY_DIR         = path.join(DATA_DIR, 'replay');
 const PREDICTIONS_FILE   = path.join(REPLAY_DIR, 'replay-predictions.jsonl');
 const RESULTS_FILE       = path.join(REPLAY_DIR, 'replay-results.jsonl');
@@ -107,10 +107,8 @@ function run() {
   console.log('');
 
   // Load fixtures — keyed by fixtureId for O(1) lookup
-  if (!fs.existsSync(FIXTURES_FILE)) {
-    throw new Error(`Fixtures file not found: ${FIXTURES_FILE}`);
-  }
-  const fixtures = JSON.parse(fs.readFileSync(FIXTURES_FILE, 'utf8'));
+  
+  const fixtures = loadHistoricalFixtures();
   const fixtureMap = new Map(fixtures.map(f => [f.fixtureId, f]));
   console.log(`  Fixtures loaded: ${fixtures.length}`);
 

@@ -35,6 +35,7 @@ const path = require('path');
 const { buildNormalisedFeatures } = require('./feature-builder');
 const { scoreMatch }              = require('../engine/shortlist');
 const { estimateO25, fairOdds }   = require('../engine/probability');
+const { loadHistoricalFixtures }  = require('./load-historical-fixtures');
 
 // ── CLI args ──────────────────────────────────────────────────
 
@@ -49,11 +50,12 @@ function getArg(flag, defaultVal) {
 const MIN_SAMPLE = parseInt(getArg('--min-sample', '3'), 10);
 const LIMIT      = parseInt(getArg('--limit', '0'), 10);   // 0 = no limit
 const DRY_RUN    = args.includes('--dry-run');
+const LEAGUE_KEY = getArg('--league', null);
 
 // ── Paths ─────────────────────────────────────────────────────
 
 const DATA_DIR         = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
-const FIXTURES_FILE    = path.join(DATA_DIR, 'historical', 'epl_2025_26_fixtures.json');
+// const FIXTURES_FILE    = path.join(DATA_DIR, 'historical', 'epl_2025_26_fixtures.json');
 const REPLAY_DIR       = path.join(DATA_DIR, 'replay');
 const PREDICTIONS_FILE = path.join(REPLAY_DIR, 'replay-predictions.jsonl');
 
@@ -167,7 +169,7 @@ async function run() {
   console.log(`  Output:     ${DRY_RUN ? 'stdout only' : PREDICTIONS_FILE}`);
   console.log('');
 
-  const fixtures = loadFixtures();
+  const fixtures = loadHistoricalFixtures({ leagueKey: LEAGUE_KEY });
   const completed = fixtures.filter(f => f.status === 'completed');
   console.log(`  Fixtures total:    ${fixtures.length}`);
   console.log(`  Completed:         ${completed.length}`);
@@ -250,6 +252,7 @@ async function run() {
   // Summary
   console.log('');
   console.log('  ── Run summary ──────────────────────────────');
+  console.log(`  League                       : ${LEAGUE_KEY || 'all configured leagues'}`);
   console.log(`  Completed fixtures processed : ${processed}`);
   console.log(`  Predictions written          : ${written}`);
   console.log(`  Skipped (sample < ${MIN_SAMPLE})         : ${skippedSample}`);
