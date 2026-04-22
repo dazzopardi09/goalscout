@@ -29,7 +29,7 @@ services:
       - "binhex-flaresolverr:host-gateway"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3030/api/status"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3030/api/status"]
       interval: 60s
       timeout: 5s
       start_period: 30s
