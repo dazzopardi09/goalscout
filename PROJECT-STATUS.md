@@ -3,7 +3,7 @@
 ## What This Is
 A local Unraid Docker app that identifies football matches worth betting on for Over 2.5 or Under 2.5 goals markets, using a probability pricing engine to find edge against bookmaker prices.
 
-## Current State (v2 — April 2026)
+## Current State (v3 — April 2026)
 - **Working and deployed** on Unraid at port 3030
 - **Bettable-first flow**: queries The-Odds-API for leagues with active betting markets, scrapes/scores only those leagues
 - **Data source**: SoccerSTATS.com (paid membership, uses FlareSolverr for Cloudflare bypass)
@@ -13,6 +13,19 @@ A local Unraid Docker app that identifies football matches worth betting on for 
 - **Settlement**: Every 2 hours via cron
 - **Performance tab**: O2.5 and U2.5 tabs independently tracking hit rate, Brier score, mean edge, CLV
 - **Current output**: ~960 matches scraped → ~121 bettable → ~9 shortlisted
+
+- **Dual-model system live**:
+  - Current model (scoring-based)
+  - Calibrated model (probability-based, A-League trained)
+
+- **Shortlist now split by model**
+  - Both models run independently on same match pool
+  - UI supports filtering by model
+  - Overlap tracking implemented
+
+- **Performance tracking split by model**
+  - Independent stats for Current vs Calibrated
+  - Shared overlap summary
 
 ## Scope — What This App Does and Doesn't Do
 
@@ -51,6 +64,31 @@ The-Odds-API (UK region) ──→ League filtering + odds overlay
                         ↓
               Local JSON + JSONL history (data/history/)
 ```
+
+## Model Architecture (v3)
+
+GoalScout now runs two independent models:
+
+### Current Model
+- Direction determined by scoring system
+- Grade-based filtering (A+/A/B)
+- Baseline production model
+
+### Calibrated Model
+- Uses probability calibration from A-League historical data
+- Selects direction based on calibrated probabilities
+- Uses probability → grade mapping (not scoring system)
+- Runs on all leagues (not limited to A-League)
+
+### Key Principle
+Both models:
+- operate on identical match inputs
+- produce independent outputs
+- are evaluated separately
+
+This enables:
+- controlled validation of calibration impact
+- removal of bias from shortlist dependency
 
 ## Tech Stack
 - Node.js 20 + Express
@@ -261,6 +299,11 @@ The following changes are planned and documented but not yet built:
 
 **Priority 3 — Tooltip hover fix**
 Add `position:relative` to `.table-shell` and `z-index:9999` on tooltip. Small CSS-only fix.
+
+- ⚠️ Odds caching inefficiency — duplicate calls still occurring when models overlap
+- ⚠️ Calibration chart not yet wired to method-specific stats
+- ⚠️ Historical data includes legacy BTTS contamination
+- ⚠️ UI filter edge cases (model + grade interaction)
 
 ## Recently Completed (April 2026)
 - ✅ Bookmaker region config — env-driven, no hardcodes

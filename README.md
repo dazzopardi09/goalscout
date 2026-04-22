@@ -47,6 +47,37 @@ Settlement Engine
 Express API + HTML Dashboard
   └─ Shortlist tab: directional matches with odds and edge
   └─ Performance tab: O2.5 and U2.5 independently
+
+### Multi-Model Architecture (v3)
+
+GoalScout now runs **two parallel models** on the same match pool:
+
+- **Current model**
+  - Uses directional scoring system (A+/A/B)
+  - Drives baseline shortlist
+
+- **Calibrated model**
+  - Uses probability-calibrated thresholds (A-League trained)
+  - Independently selects matches and direction
+  - Does NOT depend on current shortlist
+
+Both models:
+- Evaluate the same bettable matches
+- Produce their own shortlist
+- Are tracked independently in performance
+- Are compared via overlap metrics
+
+Shortlist API now returns:
+
+{
+  current: [...],
+  calibrated: [...],
+  comparison: {
+    overlapIds: [],
+    currentOnlyIds: [],
+    calibratedOnlyIds: []
+  }
+}
 ```
 
 ---
@@ -149,7 +180,20 @@ UK region is used instead of AU because:
 
 ## Performance Tracking
 
-The Performance tab tracks O2.5 and U2.5 **independently**:
+Performance is now tracked across two dimensions:
+
+1. **Market (O2.5 vs U2.5)**
+2. **Model (Current vs Calibrated)**
+
+Each model is evaluated independently:
+- Hit rate
+- Brier score
+- Mean edge
+- CLV
+
+This allows:
+- direct comparison of model quality
+- validation of calibration improvements
 
 - **Hit rate** — % of predictions correct
 - **Mean model probability** — average confidence at tip-time
@@ -192,6 +236,16 @@ data/
 | POST | `/api/settle` | Trigger manual settlement + pre-kickoff odds capture |
 
 ---
+## In terminal to ssh in and get to correct directory
+
+```bash
+ssh root@192.168.178.5
+```
+
+```bash
+cd /mnt/user/appdata/goalscout
+```
+
 
 ## Setup
 
@@ -207,6 +261,7 @@ docker compose up -d
 ```bash
 cd /mnt/user/appdata/goalscout
 docker compose down
+docker rm -f goalscout 2>/dev/null || true
 docker rmi goalscout goalscout-goalscout 2>/dev/null || true
 docker builder prune -f
 docker compose up --build -d

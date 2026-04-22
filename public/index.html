@@ -17,7 +17,7 @@
     <div class="hero-inner">
       <div>
         <div class="brand">
-          <h1>GoalScout<span>.v2</span></h1>
+          <h1>GoalScout<span>.v3</span></h1>
           <span class="pill">probability engine</span>
         </div>
         <p>Directional probability engine. Rates each match as Over 2.5 or Under 2.5, calculates fair odds, and identifies edge vs market price.</p>
@@ -45,7 +45,7 @@
        ════════════════════════════════════════════════════════ -->
   <div id="shortlistPanel">
 
-    <!-- Stats bar — replaces old stat tiles -->
+    <!-- Stats bar -->
     <div class="stats-bar">
       <div>
         <div class="stats-bar__count" id="statShortlisted">—</div>
@@ -59,6 +59,12 @@
     <section class="filters">
       <div class="filters-inner">
         <div class="filter-row">
+          <div class="filter-group">
+            <span class="filter-label">Model</span>
+            <button class="filter-chip active" data-group="method" data-val="all">All</button>
+            <button class="filter-chip" data-group="method" data-val="current">Current</button>
+            <button class="filter-chip" data-group="method" data-val="calibrated">Calibrated</button>
+          </div>
           <div class="filter-group">
             <span class="filter-label">Grade</span>
             <button class="filter-chip active" data-group="grade" data-val="all">All</button>
@@ -106,6 +112,12 @@
 
       <!-- Hero strip -->
       <div class="perf-hero-strip" id="perfSummaryCards"></div>
+
+      <div class="market-tabs" style="margin-bottom:14px">
+        <button class="market-tab active" id="perfMethodCurrent" onclick="switchPerfMethod('current')">Current</button>
+        <button class="market-tab" id="perfMethodCalibrated" onclick="switchPerfMethod('calibrated')">Calibrated</button>
+      </div>
+
 
       <!-- Market cards -->
       <div class="perf-mkt-grid">
@@ -183,18 +195,20 @@
 
   <div class="footer">
     <span>Data: <a href="https://www.soccerstats.com" target="_blank">SoccerSTATS</a> · Odds: <a href="https://the-odds-api.com" target="_blank">The-Odds-API</a> · Not betting advice.</span>
-    <span>GoalScout v2 · Melbourne AEST</span>
+    <span>GoalScout v3 · Melbourne AEST</span>
   </div>
 
 </div><!-- /app -->
 
 <script>
 // ── State ─────────────────────────────────────────────────────
-let shortlistData = [];
-let filters = { grade: 'all', direction: 'all', league: 'all' };
+let shortlistData = { current: [], calibrated: [], comparison: {} };
+let filters = { method: 'all', grade: 'all', direction: 'all', league: 'all' };
 let currentSort = { key: 'prob', dir: 'desc' };
 let perfData = null;
 let activePerfMarket = 'over_2.5';
+let statsData = null;
+let statsMethod = 'all';
 
 // ── Helpers ───────────────────────────────────────────────────
 function pctClass(v) { return v == null ? 'pct-cold' : v >= 65 ? 'pct-hot' : v >= 50 ? 'pct-warm' : 'pct-cold'; }
@@ -243,6 +257,23 @@ function fmtDate(m) {
   return m.day || '';
 }
 
+function getActiveShortlist() {
+  if (filters.method === 'current') return shortlistData.current || [];
+  if (filters.method === 'calibrated') return shortlistData.calibrated || [];
+
+  const map = new Map();
+
+  (shortlistData.current || []).forEach(m => {
+    map.set(m.id, m);
+  });
+
+  (shortlistData.calibrated || []).forEach(m => {
+    if (!map.has(m.id)) map.set(m.id, m);
+  });
+
+  return Array.from(map.values());
+}
+
 // ── Status polling ─────────────────────────────────────────────
 async function loadStatus() {
   try {
@@ -282,7 +313,18 @@ async function loadStatus() {
 async function loadShortlist() {
   try {
     var r = await fetch('/api/shortlist');
-    shortlistData = await r.json();
+    var payload = await r.json();
+
+    if (Array.isArray(payload)) {
+      shortlistData = { current: payload, calibrated: [], comparison: {} };
+    } else {
+      shortlistData = {
+        current: payload.current || [],
+        calibrated: payload.calibrated || [],
+        comparison: payload.comparison || {}
+      };
+    }
+
     populateLeagueFilter();
     renderShortlist();
   } catch (e) {}
@@ -290,20 +332,38 @@ async function loadShortlist() {
 
 function populateLeagueFilter() {
   var s = document.getElementById('leagueFilter');
-  var ls = [...new Set(shortlistData.map(m => m.league))].sort();
+  var active = getActiveShortlist();
+  var ls = [...new Set(active.map(m => m.league))].sort();
+  var currentValue = filters.league || 'all';
+
   while (s.options.length > 1) s.remove(1);
-  ls.forEach(l => { var o = document.createElement('option'); o.value = l; o.textContent = l; s.appendChild(o); });
+
+  ls.forEach(l => {
+    var o = document.createElement('option');
+    o.value = l;
+    o.textContent = l;
+    s.appendChild(o);
+  });
+
+  if ([...s.options].some(o => o.value === currentValue)) {
+    s.value = currentValue;
+  } else {
+    s.value = 'all';
+    filters.league = 'all';
+  }
 }
 
 // ── Sorting ───────────────────────────────────────────────────
 function getSortedData() {
-  var data = shortlistData.filter(m => {
+  var data = getActiveShortlist().filter(m => {
     if (filters.grade !== 'all' && m.grade !== filters.grade) return false;
     if (filters.league !== 'all' && m.league !== filters.league) return false;
     if (filters.direction !== 'all' && m.direction !== filters.direction) return false;
     return true;
   });
+
   var key = currentSort.key, mult = currentSort.dir === 'asc' ? 1 : -1;
+
   return data.sort((a, b) => {
     var va, vb;
     switch (key) {
@@ -311,12 +371,20 @@ function getSortedData() {
         va = a.analysis ? ((a.direction === 'u25' ? a.analysis.u25 : a.analysis.o25)?.probability || 0) : 0;
         vb = b.analysis ? ((b.direction === 'u25' ? b.analysis.u25 : b.analysis.o25)?.probability || 0) : 0;
         break;
-      case 'grade': { var go = { 'A+': 4, 'A': 3, 'B': 2, 'C': 1 }; va = go[a.grade] || 0; vb = go[b.grade] || 0; break; }
+      case 'grade': {
+        var go = { 'A+': 4, 'A': 3, 'B': 2, 'C': 1, '-': 0 };
+        va = go[a.grade] || 0;
+        vb = go[b.grade] || 0;
+        break;
+      }
       case 'kickoff':
         va = a.odds?.commenceTime || a.kickoff || '';
         vb = b.odds?.commenceTime || b.kickoff || '';
         break;
-      case 'match': va = a.homeTeam || ''; vb = b.homeTeam || ''; break;
+      case 'match':
+        va = a.homeTeam || '';
+        vb = b.homeTeam || '';
+        break;
       case 'edge':
         va = a.analysis ? ((a.direction === 'u25' ? a.analysis.u25 : a.analysis.o25)?.edge ?? -999) : -999;
         vb = b.analysis ? ((b.direction === 'u25' ? b.analysis.u25 : b.analysis.o25)?.edge ?? -999) : -999;
@@ -325,8 +393,11 @@ function getSortedData() {
         va = a.direction === 'u25' ? a.odds?.u25?.price ?? 0 : a.odds?.o25?.price ?? 0;
         vb = b.direction === 'u25' ? b.odds?.u25?.price ?? 0 : b.odds?.o25?.price ?? 0;
         break;
-      default: va = 0; vb = 0;
+      default:
+        va = 0;
+        vb = 0;
     }
+
     if (typeof va === 'string') return mult * va.localeCompare(vb);
     return mult * ((va || 0) - (vb || 0));
   });
@@ -347,21 +418,27 @@ function renderShortlist() {
   var empty = document.getElementById('emptyState');
   var data = getSortedData();
 
-  if (!data.length) { wrap.innerHTML = ''; empty.style.display = 'block'; return; }
+  if (!data.length) {
+    wrap.innerHTML = '';
+    empty.style.display = 'block';
+    empty.querySelector('h2').textContent = `No ${filters.method} matches shortlisted`;
+    empty.querySelector('p').textContent = `No bettable matches meet the ${filters.method} model threshold. Try refreshing.`;
+    return;
+  }
+
   empty.style.display = 'none';
 
   function sc(k) { return currentSort.key === k ? currentSort.dir : ''; }
 
-  // Tooltip definitions for each column
   const tips = {
-    prob:    'Model probability for the recommended direction (O2.5 or U2.5). This is the blended output of Home O2.5%, Away O2.5%, League O2.5% and Combined TG. ≥60% required to appear.',
-    grade:   'Signal breadth grade — counts how many statistical flags fired (CS%, FTS%, O2.5%, TG thresholds). A+ = 10+ flag points, A = 7+, B = 5+. Grade and Probability are independent: a B-grade match can have high probability if two signals are very strong.',
-    call:    'Recommended direction: O2.5 (Over 2.5 goals) or U2.5 (Under 2.5 goals). Derived from which signal category — offensive or defensive — scored higher.',
+    prob:    'Model probability for the recommended direction (O2.5 or U2.5).',
+    grade:   'Current uses score-based grade. Calibrated uses probability-based grade.',
+    call:    'Recommended direction: O2.5 or U2.5.',
     kickoff: 'Match kickoff time in Australian Eastern time (AEST/AEDT).',
     league:  'Competition name as reported by SoccerSTATS.',
     match:   'Home vs Away team.',
-    odds:    'Best available odds for the recommended direction across AU/UK bookmakers via The-Odds-API.',
-    edge:    'Edge % = (market odds / fair odds − 1) × 100. Positive = market is offering more than the model thinks is fair. Negative = avoid. Click to sort.',
+    odds:    'Best available odds for the recommended direction across bookmakers via The-Odds-API.',
+    edge:    'Edge % = (market odds / fair odds − 1) × 100.'
   };
 
   function tipBtn(label, key) {
@@ -372,7 +449,7 @@ function renderShortlist() {
   }
 
   var sortBar = `<div class="sort-bar">
-    ${tipBtn('Probability', 'prob')}
+    ${tipBtn('Prob.', 'prob')}
     ${tipBtn('Grade', 'grade')}
     ${tipLabel('Call', 'call')}
     ${tipBtn('Kickoff', 'kickoff')}
@@ -405,7 +482,6 @@ function buildMatchRow(m, i) {
     ? '<span class="dir-badge dir-u25">U2.5</span>'
     : '<span class="dir-badge dir-o25">O2.5</span>';
 
-  // Odds
   var oddsData = isU25 ? m.odds?.u25 : m.odds?.o25;
   var oddsHtml = '<span style="color:#66758c;font-size:12px;font-style:italic">No odds</span>';
   if (oddsData) {
@@ -414,35 +490,29 @@ function buildMatchRow(m, i) {
     oddsHtml = `<div class="${cls}"><div class="${priceCls}">${oddsData.price.toFixed(2)}</div><div class="odds-label">${oddsData.bookmaker}</div></div>`;
   }
 
-  // Edge
   var edgeHtml = '<span style="color:#66758c;font-size:12px">—</span>';
   if (edge != null) {
     var ec = edgeColor(edge);
     edgeHtml = `<div class="edge-box"><div class="edge-label">Edge</div><div class="edge-val" style="color:${ec}">${edge > 0 ? '+' : ''}${edge.toFixed(1)}%</div></div>`;
   }
 
-  // Stats
   var hCS = fmtPct(m.home?.csPct), aCS = fmtPct(m.away?.csPct);
   var hFTS = fmtPct(m.home?.ftsPct), aFTS = fmtPct(m.away?.ftsPct);
   var hO = fmtPct(m.home?.o25pct), aO = fmtPct(m.away?.o25pct);
   var combinedTG = (m.home?.avgTG != null && m.away?.avgTG != null)
     ? (m.home.avgTG + m.away.avgTG).toFixed(2) : null;
 
-  // Model inputs for expanded panel
   var leagueO25 = m.leagueO25pct != null ? m.leagueO25pct : null;
   var hOraw = m.home?.o25pct || 0;
   var aOraw = m.away?.o25pct || 0;
   var tgRaw = combinedTG ? parseFloat(combinedTG) : null;
 
-  // Flags
   var flags = (m.flags || []);
   var flagsHtml = flags.map(f => {
-    var cls = f.startsWith('⚠') ? 'warn' : f.startsWith('🔥') || f.startsWith('📈') ? 'hot' : '';
     var txt = f.replace(/^[🔥📈⚠🔒]\s*/u, '').trim();
     return `<span class="sig-tag fire" style="display:inline-flex;margin:2px 0"><span class="sig-text">${txt}</span></span>`;
   }).join('') || '<span style="color:#66758c;font-size:12px">No signals</span>';
 
-  // Links
   var linksHtml = '';
   if (m.matchUrl)  linksHtml += `<a href="${m.matchUrl}" target="_blank" rel="noopener" style="border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#ddd6fe;border-radius:9px;padding:8px 12px;font-size:12px;text-decoration:none;display:block;margin-bottom:6px">📊 Match detail</a>`;
   if (m.leagueUrl) linksHtml += `<a href="${m.leagueUrl}" target="_blank" rel="noopener" style="border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#ddd6fe;border-radius:9px;padding:8px 12px;font-size:12px;text-decoration:none;display:block">🏆 League page</a>`;
@@ -467,8 +537,6 @@ function buildMatchRow(m, i) {
   </div>
 
   <div class="row-detail">
-
-    <!-- 4-panel top: Model Inputs | Context | Odds Timeline (ph) | Book Odds (ph) -->
     <div class="detail-panels">
 
       <div class="detail-panel">
@@ -537,9 +605,8 @@ function buildMatchRow(m, i) {
         </div>
       </div>
 
-    </div><!-- /detail-panels -->
+    </div>
 
-    <!-- Signal Scorecard -->
     <div class="detail-signals">
       <div class="sig-head">
         <div class="sig-head-lbl">Signals</div>
@@ -558,12 +625,15 @@ function buildMatchRow(m, i) {
       </div>
     </div>
 
-  </div><!-- /row-detail -->
+  </div>
 </div>`;
 }
 
 // ── Filters ───────────────────────────────────────────────────
-function applyFilters() { filters.league = document.getElementById('leagueFilter').value; renderShortlist(); }
+function applyFilters() {
+  filters.league = document.getElementById('leagueFilter').value;
+  renderShortlist();
+}
 
 document.querySelectorAll('.filter-chip').forEach(chip => {
   chip.addEventListener('click', () => {
@@ -571,6 +641,11 @@ document.querySelectorAll('.filter-chip').forEach(chip => {
     document.querySelectorAll(`.filter-chip[data-group="${group}"]`).forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
     filters[group] = chip.dataset.val;
+
+    if (group === 'method') {
+      populateLeagueFilter();
+    }
+
     renderShortlist();
   });
 });
@@ -599,58 +674,113 @@ function switchTab(tab) {
 
 // ── Settle ────────────────────────────────────────────────────
 async function triggerSettle(btn) {
-  btn.disabled = true; btn.textContent = '⟳ Settling...';
+  btn.disabled = true;
+  btn.textContent = '⟳ Settling...';
   try {
     var r = await fetch('/api/settle', { method: 'POST' });
     var d = await r.json();
     btn.textContent = `✓ ${d.settled || 0} settled`;
     if (document.getElementById('tabPerf').classList.contains('active')) loadPerformance();
-  } catch (e) { btn.textContent = '✗ Error'; }
+  } catch (e) {
+    btn.textContent = '✗ Error';
+  }
   setTimeout(() => { btn.textContent = '↻ Settle now'; btn.disabled = false; }, 3000);
 }
 
 // ── Performance ───────────────────────────────────────────────
+function switchPerfMethod(method) {
+  statsMethod = method;
+  document.getElementById('perfMethodCurrent').className =
+    'market-tab' + (method === 'current' ? ' active' : '');
+  document.getElementById('perfMethodCalibrated').className =
+    'market-tab' + (method === 'calibrated' ? ' active' : '');
+
+  if (statsData) renderPerformance(statsData);
+}
+
 function switchPerfMarketTab(market) {
   activePerfMarket = market;
-  document.getElementById('perfTabO25').className = 'market-tab' + (market === 'over_2.5' ? ' active' : '');
-  document.getElementById('perfTabU25').className = 'market-tab' + (market === 'under_2.5' ? ' active-u25' : '');
-  if (perfData) renderPerfTable(perfData.recentSettled || []);
+  document.getElementById('perfTabO25').className =
+    'market-tab' + (market === 'over_2.5' ? ' active' : '');
+  document.getElementById('perfTabU25').className =
+    'market-tab' + (market === 'under_2.5' ? ' active-u25' : '');
+
+  if (statsData) {
+    const methodData = statsData.methods?.[statsMethod] || { recentSettled: [] };
+    renderPerfTable(methodData.recentSettled || []);
+  }
 }
 
 async function loadPerformance() {
   document.getElementById('perfLoading').style.display = 'block';
   document.getElementById('perfContent').style.display = 'none';
+
   try {
-    var r = await fetch('/api/stats');
-    perfData = await r.json();
-    renderPerformance(perfData);
+    const r = await fetch('/api/stats');
+    statsData = await r.json();
+    renderPerformance(statsData);
   } catch (e) {
     document.getElementById('perfLoading').textContent = 'Failed to load performance data.';
   }
 }
 
 function renderPerformance(d) {
-  var s = d.summary || {}, o25 = d.markets?.['over_2.5'] || {}, u25 = d.markets?.['under_2.5'] || {};
+  const current = d.methods?.current || {
+    summary: {}, markets: {}, recentSettled: [], overlap: {}
+  };
+  const calibrated = d.methods?.calibrated || {
+    summary: {}, markets: {}, recentSettled: [], overlap: {}
+  };
+  const methodData = d.methods?.[statsMethod] || current;
+  const comparison = d.comparison?.overlap || { both: 0, current_only: 0, calibrated_only: 0 };
 
-  // Hero strip
-  var heroData = [
-    { label: 'Total Predictions', val: s.total || 0, sub: 'across both markets', cls: '' },
-    { label: 'Settled',           val: s.settled || 0, sub: `${s.pending || 0} pending · ${s.awaiting || 0} awaiting`, cls: '' },
-    { label: 'Void Rate',         val: s.voidRatePct != null ? s.voidRatePct + '%' : '—', sub: `${s.void || 0} voids`, cls: s.voidRatePct > 10 ? 'warn' : '' },
-    { label: 'Overall Hit Rate',  val: s.settled > 0 ? Math.round(s.won / s.settled * 1000) / 10 + '%' : '—', sub: `${s.won || 0} of ${s.settled || 0}`, cls: 'ok' },
+  // Shared summary strip — visible on both method tabs
+  const summaryCards = [
+    {
+      label: 'Current',
+      val: current.summary?.settled > 0
+        ? `${Math.round((current.summary.won / current.summary.settled) * 1000) / 10}%`
+        : '—',
+      sub: `${current.summary?.settled || 0} settled`
+    },
+    {
+      label: 'Calibrated',
+      val: calibrated.summary?.settled > 0
+        ? `${Math.round((calibrated.summary.won / calibrated.summary.settled) * 1000) / 10}%`
+        : '—',
+      sub: `${calibrated.summary?.settled || 0} settled`
+    },
+    {
+      label: 'Overlap',
+      val: `${comparison.both || 0}`,
+      sub: `${comparison.current_only || 0} current-only · ${comparison.calibrated_only || 0} calibrated-only`
+    },
+    {
+      label: 'Active View',
+      val: statsMethod === 'current' ? 'Current' : 'Calibrated',
+      sub: `${methodData.summary?.pending || 0} pending`
+    }
   ];
-  document.getElementById('perfSummaryCards').innerHTML = heroData.map(c =>
-    `<div class="perf-hero-cell"><div class="ph-label">${c.label}</div><div class="ph-val ${c.cls}">${c.val}</div><div class="ph-sub">${c.sub}</div></div>`
+
+  document.getElementById('perfSummaryCards').innerHTML = summaryCards.map(c =>
+    `<div class="perf-hero-cell">
+      <div class="ph-label">${c.label}</div>
+      <div class="ph-val">${c.val}</div>
+      <div class="ph-sub">${c.sub}</div>
+    </div>`
   ).join('');
 
-  function mktPanel(label, m, color, isU25) {
-    var hitColor = m.hitRate >= 55 ? '#6ee7b7' : m.hitRate >= 45 ? '#fbbf24' : '#f87171';
-    var hitCls   = m.hitRate >= 55 ? 'green' : m.hitRate >= 45 ? 'amber' : 'red';
-    var brierCls = m.brierScore != null ? (m.brierScore < 0.22 ? 'green' : m.brierScore < 0.26 ? 'amber' : 'red') : '';
+  function mktPanel(label, m) {
+    const hitColor = m.hitRate >= 55 ? '#6ee7b7' : m.hitRate >= 45 ? '#fbbf24' : '#f87171';
+    const hitCls   = m.hitRate >= 55 ? 'green' : m.hitRate >= 45 ? 'amber' : 'red';
+    const brierCls = m.brierScore != null
+      ? (m.brierScore < 0.22 ? 'green' : m.brierScore < 0.26 ? 'amber' : 'red')
+      : '';
+
     return `
       <div class="pmc-head">
         <div class="pmc-title">${label} <em>${m.total || 0} predictions</em></div>
-        <div class="pmc-pending">${(m.pending || 0) + (m.awaiting ? ' · ' + m.awaiting + ' awaiting' : '') + ' pending'}</div>
+        <div class="pmc-pending">${(m.pending || 0) + ((m.awaiting || 0) ? ' · ' + m.awaiting + ' awaiting' : '') + ' pending'}</div>
       </div>
       <div class="pmc-body">
         <div class="pmc-stat">
@@ -668,48 +798,61 @@ function renderPerformance(d) {
           <div class="pmc-row"><div class="pmc-row-lbl">Mean edge at tip</div><div class="pmc-row-val ${m.meanEdgePct > 0 ? 'g' : 'r'}">${m.meanEdgePct != null ? (m.meanEdgePct > 0 ? '+' : '') + m.meanEdgePct + '%' : '—'}</div></div>
           <div class="pmc-row"><div class="pmc-row-lbl">Pre-KO move</div><div class="pmc-row-val">${m.meanPreKickoffMovePct != null ? (m.meanPreKickoffMovePct > 0 ? '+' : '') + m.meanPreKickoffMovePct + '%' : '—'}</div></div>
           <div class="pmc-row"><div class="pmc-row-lbl">Mean CLV</div><div class="pmc-row-val ${m.meanCLVPct > 0 ? 'g' : ''}">${m.meanCLVPct != null ? (m.meanCLVPct > 0 ? '+' : '') + m.meanCLVPct + '%' : '—'}</div></div>
+          <div class="pmc-row"><div class="pmc-row-lbl">Units</div><div class="pmc-row-val ${(m.units || 0) >= 0 ? 'g' : 'r'}">${m.units != null ? ((m.units > 0 ? '+' : '') + m.units.toFixed(2) + 'u') : '—'}</div></div>
+          <div class="pmc-row"><div class="pmc-row-lbl">ROI</div><div class="pmc-row-val ${(m.roi || 0) >= 0 ? 'g' : 'r'}">${m.roi != null ? ((m.roi > 0 ? '+' : '') + m.roi + '%') : '—'}</div></div>
         </div>
       </div>
-      ${(m.settled || 0) < 30 ? `<div class="pmc-warn">⚠ Only ${m.settled || 0} settled. Hit rate is high-variance — calibration needs 200+. Focus on edge and CLV trend.</div>` : ''}
+      ${(m.settled || 0) < 30 ? `<div class="pmc-warn">⚠ Only ${m.settled || 0} settled. Early sample — read edge, CLV and Brier before hit rate.</div>` : ''}
     `;
   }
 
-  document.getElementById('perfO25Panel').innerHTML = mktPanel('Over 2.5 Goals', o25, '#6ee7b7', false);
-  document.getElementById('perfU25Panel').innerHTML = mktPanel('Under 2.5 Goals', u25, '#818cf8', true);
+  document.getElementById('perfO25Panel').innerHTML =
+    mktPanel('Over 2.5 Goals', methodData.markets?.['over_2.5'] || {});
+  document.getElementById('perfU25Panel').innerHTML =
+    mktPanel('Under 2.5 Goals', methodData.markets?.['under_2.5'] || {});
 
-  renderPerfTable(d.recentSettled || []);
+  renderPerfTable(methodData.recentSettled || []);
+
   document.getElementById('perfLoading').style.display = 'none';
   document.getElementById('perfContent').style.display = 'block';
 }
 
 function renderPerfTable(all) {
-  var rows = all.filter(p => p.market === activePerfMarket);
-  var tbody = document.getElementById('perfTableBody');
+  const rows = all.filter(p => p.market === activePerfMarket);
+  const tbody = document.getElementById('perfTableBody');
+
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;padding:2rem;color:#8b9ab0;font-size:13px">No settled ${activePerfMarket === 'over_2.5' ? 'Over 2.5' : 'Under 2.5'} predictions yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;padding:2rem;color:#8b9ab0;font-size:13px">No settled ${statsMethod} ${activePerfMarket === 'over_2.5' ? 'Over 2.5' : 'Under 2.5'} predictions yet.</td></tr>`;
     return;
   }
+
   tbody.innerHTML = rows.map(p => {
-    var edgeStr  = p.edge != null  ? `<span style="color:${edgeColor(p.edge)}">${p.edge > 0 ? '+' : ''}${p.edge.toFixed(1)}%</span>` : '—';
-    var clvStr   = p.clvPct != null ? `<span style="color:${clvColor(p.clvPct)}">${p.clvPct > 0 ? '+' : ''}${p.clvPct.toFixed(1)}%</span>` : '—';
-    var moveStr  = p.preKickoffMovePct != null ? `<span style="color:${moveColor(p.preKickoffMovePct)}">${p.preKickoffMovePct > 0 ? '+' : ''}${p.preKickoffMovePct.toFixed(1)}%</span>` : '—';
-    // Negative move = odds shortened = market agrees = green. Positive = drifted = red.
-    var moveColour = p.preKickoffMovePct != null
+    const edgeStr = p.edge != null
+      ? `<span style="color:${edgeColor(p.edge)}">${p.edge > 0 ? '+' : ''}${p.edge.toFixed(1)}%</span>`
+      : '—';
+
+    const clvStr = p.clvPct != null
+      ? `<span style="color:${clvColor(p.clvPct)}">${p.clvPct > 0 ? '+' : ''}${p.clvPct.toFixed(1)}%</span>`
+      : '—';
+
+    const moveColour = p.preKickoffMovePct != null
       ? (p.preKickoffMovePct < 0 ? '#6ee7b7' : p.preKickoffMovePct > 0 ? '#f87171' : '#8b9ab0')
       : '#8b9ab0';
-    var moveDisplay = p.preKickoffMovePct != null
+
+    const moveDisplay = p.preKickoffMovePct != null
       ? `<span style="color:${moveColour}">${p.preKickoffMovePct > 0 ? '+' : ''}${p.preKickoffMovePct.toFixed(1)}%</span>`
       : '—';
-    var resultScore = p.result || '—';
-    var resultBadge = p.status === 'settled_won'
+
+    const resultScore = p.result || '—';
+    const resultBadge = p.status === 'settled_won'
       ? `<span style="color:#6ee7b7;font-weight:700">✓ Won</span>`
       : p.status === 'settled_lost'
         ? `<span style="color:#f87171;font-weight:700">✗ Lost</span>`
         : '—';
-    // Grade: now stored at top level in new predictions; fall back to inputs.grade for old records
-    var grade = p.grade || p.inputs?.grade || '—';
-    // Direction: stored at top level
-    var dir   = p.direction || (p.market === 'under_2.5' ? 'u25' : 'o25');
+
+    const grade = p.grade || p.inputs?.grade || '—';
+    const dir = p.direction || (p.market === 'under_2.5' ? 'u25' : 'o25');
+
     return `<tr>
       <td style="color:#66758c;font-size:11px">${p.predictionDate}</td>
       <td>${p.homeTeam} vs ${p.awayTeam}</td>
@@ -726,7 +869,7 @@ function renderPerfTable(all) {
       <td style="text-align:center;color:#67e8f9;font-weight:700">${resultScore}</td>
       <td style="text-align:center">${resultBadge}</td>
     </tr>`;
-  }).join('');
+  }).join('');  
 }
 
 // ── Init ──────────────────────────────────────────────────────

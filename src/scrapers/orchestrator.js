@@ -27,6 +27,7 @@ const {
 } = require('../odds/the-odds-api');
 const { writeJSON, writeMatchDetail } = require('../utils/storage');
 const config = require('../config');
+const { applyCalibration } = require('../engine/calibration');
 
 let refreshState = {
   status: 'idle',
@@ -40,6 +41,14 @@ let refreshState = {
 
 function getRefreshState() {
   return { ...refreshState };
+}
+
+function getCalibratedGrade(prob) {
+  if (prob == null) return '-';
+  if (prob >= 0.85) return 'A+';
+  if (prob >= 0.70) return 'A';
+  if (prob >= 0.60) return 'B';
+  return '-';
 }
 
 async function runFullRefresh({ scrapeDetails = true } = {}) {
@@ -163,73 +172,123 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       }
     }
 
-    // ── Step 7: Probability engine + probability floor ────
-    // IMPORTANT: logPrediction is called AFTER the floor filter.
-    // Only matches that survive to the final visible shortlist get logged.
-    // Logging before the filter pollutes history with sub-threshold predictions.
+        // ── Step 7: Probability engine + parallel current/calibrated models ────
     refreshState.progress = 'Calculating probabilities...';
     const minProb = config.THRESHOLDS?.MIN_PROB || 0;
 
-    // First pass: attach analysis to all shortlisted matches
-    for (const m of shortlisted) {
+    // analyse every scored match once, then derive both model paths
+    for (const m of scored) {
       try {
-        const analysis = analyseMatch(m, leagueStatsMap[m.leagueSlug] || {});
-        m.analysis = analysis;
+        const currentAnalysis = analyseMatch(m, leagueStatsMap[m.leagueSlug] || {});
+        const rawO25 = currentAnalysis?.o25?.probability;
+
+        const calibratedO25 = rawO25 != null
+          ? applyCalibration(rawO25, m.leagueSlug)
+          : null;
+
+        const calibratedU25 = calibratedO25 != null
+          ? Math.round((1 - calibratedO25) * 10000) / 10000
+          : null;
+
+        const calibratedAnalysis = currentAnalysis ? {
+          ...currentAnalysis,
+          o25: {
+            ...currentAnalysis.o25,
+            probability: calibratedO25,
+            fairOdds: calibratedO25 ? Math.round((1 / calibratedO25) * 100) / 100 : null,
+          },
+          u25: {
+            ...currentAnalysis.u25,
+            probability: calibratedU25,
+            fairOdds: calibratedU25 ? Math.round((1 / calibratedU25) * 100) / 100 : null,
+          },
+        } : null;
+
+        m.methodAnalyses = {
+          current: currentAnalysis,
+          calibrated: calibratedAnalysis,
+        };
       } catch (e) {
         console.warn(`[orchestrator] probability failed for ${m.id}:`, e.message);
       }
     }
 
-    // Second pass: apply probability floor, splice out failures
-    // O2.5: P(O2.5) >= MIN_PROB
-    // U2.5: P(U2.5) = 1 - P(O2.5) >= MIN_PROB
-    const beforeFilter = shortlisted.length;
-    if (minProb > 0) {
-      for (let i = shortlisted.length - 1; i >= 0; i--) {
-        const m = shortlisted[i];
-        const prob = m.analysis?.o25?.probability;
-        if (prob == null) { shortlisted.splice(i, 1); continue; }
-        const dirProb = m.direction === 'u25' ? (1 - prob) : prob;
-        if (dirProb < minProb) shortlisted.splice(i, 1);
-      }
-    }
+    // current model = existing direction from shortlist/scoring engine
+    const currentShortlisted = scored
+      .filter(m => m.direction != null)
+      .map(m => ({
+        ...m,
+        analysis: m.methodAnalyses?.current || null,
+        method: 'current',
+      }))
+      .filter(m => {
+        const prob = m.direction === 'u25'
+          ? m.analysis?.u25?.probability
+          : m.analysis?.o25?.probability;
+        return prob != null && prob >= minProb;
+      });
 
-    // Third pass: log only final survivors
-    for (const m of shortlisted) {
-      if (!m.analysis) continue;
+    // calibrated model = independent direction + shortlist from calibrated probabilities
+    const calibratedShortlisted = scored
+      .map(m => {
+        const analysis = m.methodAnalyses?.calibrated;
+        const o25 = analysis?.o25?.probability;
+        const u25 = analysis?.u25?.probability;
+
+        if (o25 == null || u25 == null) return null;
+
+        const direction = o25 >= u25 ? 'o25' : 'u25';
+        const dirProb = direction === 'o25' ? o25 : u25;
+
+        if (dirProb < minProb) return null;
+
+        return {
+          ...m,
+          direction,
+          grade: getCalibratedGrade(dirProb),
+          analysis,
+          method: 'calibrated',
+        };
+      })
+      .filter(Boolean);
+
+    const currentIds = new Set(currentShortlisted.map(m => m.id));
+    const calibratedIds = new Set(calibratedShortlisted.map(m => m.id));
+
+    const assignSelectionType = (m, method) => {
+      const inCurrent = currentIds.has(m.id);
+      const inCalibrated = calibratedIds.has(m.id);
+      if (inCurrent && inCalibrated) return 'both';
+      return method === 'current' ? 'current_only' : 'calibrated_only';
+    };
+
+    currentShortlisted.forEach(m => { m.selectionType = assignSelectionType(m, 'current'); });
+    calibratedShortlisted.forEach(m => { m.selectionType = assignSelectionType(m, 'calibrated'); });
+
+    for (const m of currentShortlisted) {
       try {
-        logPrediction(m, m.analysis);
+        logPrediction(m, m.analysis, 'current', m.selectionType);
       } catch (e) {
-        console.warn(`[orchestrator] logPrediction failed for ${m.id}:`, e.message);
+        console.warn(`[orchestrator] logPrediction failed for ${m.id}/current:`, e.message);
       }
     }
 
-    const withProbs = shortlisted.filter(m => m.analysis).length;
-    const withOdds  = shortlisted.filter(m => {
-      const a = m.analysis;
-      return a && (
-        (m.direction === 'o25' && a.o25?.marketOdds != null) ||
-        (m.direction === 'u25' && a.u25?.marketOdds != null)
-      );
-    }).length;
-    const withEdge  = shortlisted.filter(m => {
-      const a = m.analysis;
-      return a && (
-        (m.direction === 'o25' && a.o25?.edge != null) ||
-        (m.direction === 'u25' && a.u25?.edge != null)
-      );
-    }).length;
+    for (const m of calibratedShortlisted) {
+      try {
+        logPrediction(m, m.analysis, 'calibrated', m.selectionType);
+      } catch (e) {
+        console.warn(`[orchestrator] logPrediction failed for ${m.id}/calibrated:`, e.message);
+      }
+    }
 
-    console.log(`[orchestrator] probabilities: ${withProbs} calculated, ${withOdds} with odds, ${withEdge} with edge, ${beforeFilter - shortlisted.length} filtered below MIN_PROB (${minProb * 100}%)`);
+    const shortlistForDetails = [...currentShortlisted, ...calibratedShortlisted]
+      .filter((m, i, arr) => arr.findIndex(x => x.id === m.id && x.method === m.method) === i);
 
-    // Recalculate direction counts after the probability floor has been applied
-    const o25Count = shortlisted.filter(m => m.direction === 'o25').length;
-    const u25Count = shortlisted.filter(m => m.direction === 'u25').length;
-    console.log(`[orchestrator] shortlisted: ${shortlisted.length} (${o25Count} O2.5, ${u25Count} U2.5)`);
+    console.log(`[orchestrator] current shortlist: ${currentShortlisted.length}, calibrated shortlist: ${calibratedShortlisted.length}, floor ${minProb * 100}%`);
 
     // ── Step 8: Match details for top shortlisted ─────────
-    if (scrapeDetails && shortlisted.length > 0) {
-      const toDetail = shortlisted.slice(0, 20);
+        if (scrapeDetails && shortlistForDetails.length > 0) {
+      const toDetail = shortlistForDetails.slice(0, 20);
       refreshState.progress = `Fetching details for ${toDetail.length} matches...`;
       for (const match of toDetail) {
         if (match.matchUrl) {
@@ -246,15 +305,23 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     // ── Step 9: Write to disk ─────────────────────────────
     refreshState.progress = 'Writing data...';
     writeJSON(config.DISCOVERED_FILE, scored);
-    writeJSON(config.SHORTLIST_FILE, shortlisted);
+    writeJSON(config.SHORTLIST_FILE, {
+      current: currentShortlisted,
+      calibrated: calibratedShortlisted,
+      comparison: {
+        overlapIds: [...currentIds].filter(id => calibratedIds.has(id)),
+        currentOnlyIds: [...currentIds].filter(id => !calibratedIds.has(id)),
+        calibratedOnlyIds: [...calibratedIds].filter(id => !currentIds.has(id)),
+      },
+    });
     writeJSON(config.META_FILE, {
       lastRefresh:      new Date().toISOString(),
       totalScraped:     allMatches.length,
       bettableCount:    matchesToScore.length,
       scoredCount:      scored.length,
-      shortlistCount:   shortlisted.length,
-      o25Count,
-      u25Count,
+      shortlistCount:   shortlistForDetails.length,
+      currentShortlistCount: currentShortlisted.length,
+      calibratedShortlistCount: calibratedShortlisted.length,
       bettableLeagues:  bettableSlugs.length,
       leaguesOnPage:    todaySlugs.length,
       leagueStatsFound: Object.keys(leagueStatsMap).length,
@@ -263,12 +330,12 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     refreshState.status        = 'done';
     refreshState.lastRefresh   = new Date().toISOString();
     refreshState.matchCount    = scored.length;
-    refreshState.shortlistCount= shortlisted.length;
+    refreshState.shortlistCount = shortlistForDetails.length;
     refreshState.bettableCount = matchesToScore.length;
     refreshState.progress      = 'Complete';
     refreshState.lastError     = null;
 
-    console.log(`[orchestrator] done. ${allMatches.length} scraped → ${matchesToScore.length} bettable → ${shortlisted.length} shortlisted (${o25Count} O2.5, ${u25Count} U2.5)`);
+    console.log(`[orchestrator] done. ${allMatches.length} scraped → ${matchesToScore.length} bettable → ${shortlistForDetails.length} unique shortlisted (${currentShortlisted.length} current, ${calibratedShortlisted.length} calibrated)`);
     return refreshState;
 
   } catch (err) {

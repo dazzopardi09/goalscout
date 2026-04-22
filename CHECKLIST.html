@@ -103,9 +103,39 @@ body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--tex
     <div class="task" id="t5" onclick="toggle('t5')">
       <div class="checkbox"></div>
       <div class="task-body">
-        <div class="task-title">Update PROJECT-STATUS.md and README.md</div>
-        <div class="task-sub">Both still reference old BTTS model in places. Known issues list is outdated. README thresholds table shows old 30%/35% values.</div>
+        <div class="task-title">Update docs for dual-model architecture (v3)</div>
+        <div class="task-sub">
+        Document new Current vs Calibrated model structure, shortlist split, and performance tracking.
+        Remove any remaining BTTS references and outdated single-model assumptions.
+        </div>
         <div class="task-tags"><span class="tag file">PROJECT-STATUS.md</span><span class="tag file">README.md</span></div>
+      </div>
+    </div>
+
+    <div class="task" id="t13" onclick="toggle('t13')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Fix odds caching duplication</div>
+        <div class="task-sub">
+    Both models are triggering odds logic for the same matches. Ensure odds are fetched once per match and reused across models.
+    </div>
+        <div class="task-tags">
+          <span class="tag file">orchestrator.js</span>
+          <span class="tag file">the-odds-api.js</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="task" id="t14" onclick="toggle('t14')">
+      <div class="checkbox"></div>
+      <div class="task-body">
+        <div class="task-title">Clean performance UI + calibration chart</div>
+        <div class="task-sub">
+    Wire calibration chart to method-specific stats and clean remaining UI inconsistencies.
+    </div>
+        <div class="task-tags">
+          <span class="tag file">index.html</span>
+        </div>
       </div>
     </div>
 
