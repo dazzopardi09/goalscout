@@ -12,14 +12,14 @@ services:
       - PORT=3030
       - FLARESOLVERR_URL=http://192.168.178.5:8191/v1
       - DISPLAY_TIMEZONE=Australia/Melbourne
-      # Active Odds API keys (2 remaining after exhausted keys removed)
-      - ODDS_API_KEYS=30d4b173a6bab1a9a6b9d0f8999ae00b,70b3804507b7a046ef41606d77b3bde3
+      # Active Odds API keys (3 remaining after exhausted keys removed)
+      - ODDS_API_KEYS=8eef29d836813cf5b5c949ae74aab60f
       # UK only — Bet365, Pinnacle, William Hill, Betfair Exchange etc.
-      - ODDS_REGIONS=uk
+      - ODDS_REGIONS=au,uk
       # No bookmaker allowlist — best price wins across all UK books.
       - ODDS_BOOKMAKERS=
-      # Daily quota guard — 2 keys × ~400 remaining ≈ 25/day safe
-      - ODDS_DAILY_LIMIT=25
+      # Daily quota guard — 3 keys × ~400 remaining ≈ 25/day safe
+      - ODDS_DAILY_LIMIT=600
       # Football-Data.org free key — used for reliable results settlement
       # Covers: EPL, Bundesliga, Serie A, Ligue 1, La Liga, Eredivisie,
       # Champions League, Championship, Liga Portugal, Brasileirão

@@ -119,12 +119,16 @@ function logPrediction(match, analysis, method = 'current', selectionType = null
 
 // ── Pre-kickoff + settle ──────────────────────────────────────
 
-function updatePreKickoffOdds(fixtureId, market, preKoPrice) {
+function updatePreKickoffOdds(fixtureId, market, method, preKoPrice) {
   const predictions = readJSONL(config.PREDICTIONS_FILE);
   let updated = false;
 
   const newLines = predictions.map(p => {
-    if (p.fixtureId !== fixtureId || p.market !== market) return p;
+    if (
+      p.fixtureId !== fixtureId ||
+      p.market !== market ||
+      (p.method || 'current') !== method
+    ) return p;
     if (p.preKickoffOdds != null) return p;
 
     const movePct = (p.marketOdds != null && preKoPrice != null)
@@ -146,12 +150,16 @@ function updatePreKickoffOdds(fixtureId, market, preKoPrice) {
   return updated;
 }
 
-function settlePrediction(fixtureId, market, { homeGoals, awayGoals, closingOdds }) {
+function settlePrediction(fixtureId, market, method, { homeGoals, awayGoals, closingOdds }) {
   const predictions = readJSONL(config.PREDICTIONS_FILE);
   let updated = false;
 
   const newLines = predictions.map(p => {
-    if (p.fixtureId !== fixtureId || p.market !== market) return p;
+    if (
+      p.fixtureId !== fixtureId ||
+      p.market !== market ||
+      (p.method || 'current') !== method
+  ) return p;
 
     const isSettleable = p.status === 'pending' || p.status == null;
     if (!isSettleable) return p;

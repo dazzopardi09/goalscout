@@ -239,22 +239,76 @@ function moveColor(v) {
   return '#fbbf24';
 }
 
-function fmtKickoff(m) {
-  if (m.odds && m.odds.commenceTime) {
-    var d = new Date(m.odds.commenceTime);
-    return d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Australia/Melbourne' });
-  }
-  if (!m.kickoff) return '—';
-  var p = m.kickoff.split(':').map(Number), h = p[0] - 1;
-  if (h < 0) h = 23;
-  return String(h).padStart(2, '0') + ':' + String(p[1]).padStart(2, '0');
+function getMelbourneNow() {
+  return new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Australia/Melbourne' })
+  );
 }
-function fmtDate(m) {
+
+function parseKickoffParts(kickoff) {
+  if (!kickoff || typeof kickoff !== 'string' || !kickoff.includes(':')) return null;
+  var parts = kickoff.split(':').map(Number);
+  if (parts.length !== 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return null;
+  return { hour: parts[0], minute: parts[1] };
+}
+
+function deriveKickoffDate(m) {
+  // If we have Odds API commence time, trust it exactly.
   if (m.odds && m.odds.commenceTime) {
-    var d = new Date(m.odds.commenceTime);
-    return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Australia/Melbourne' });
+    return new Date(m.odds.commenceTime);
   }
-  return m.day || '';
+
+  var kp = parseKickoffParts(m.kickoff);
+  if (!kp) return null;
+
+  var now = getMelbourneNow();
+
+  var d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), kp.hour - 1, kp.minute, 0, 0);
+
+  var dayLabel = (m.day || '').toLowerCase().trim();
+
+  if (dayLabel === 'tomorrow') {
+    d.setDate(d.getDate() + 1);
+    return d;
+  }
+
+  if (dayLabel === 'today') {
+    if (d.getTime() < now.getTime()) {
+      d.setDate(d.getDate() + 1);
+    }
+    return d;
+  }
+
+  return d;
+}
+
+function fmtKickoff(m) {
+  var d = deriveKickoffDate(m);
+  if (d) {
+    return d.toLocaleTimeString('en-AU', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Australia/Melbourne'
+    });
+  }
+
+  if (!m.kickoff) return '—';
+  return m.kickoff;
+}
+
+function fmtDate(m) {
+  var d = deriveKickoffDate(m);
+  if (d) {
+    return d.toLocaleDateString('en-AU', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'Australia/Melbourne'
+    });
+  }
+
+  return m.day || '—';
 }
 
 function getActiveShortlist() {
@@ -263,12 +317,21 @@ function getActiveShortlist() {
 
   const map = new Map();
 
-  (shortlistData.current || []).forEach(m => {
-    map.set(m.id, m);
-  });
+  const combined = [
+    ...(shortlistData.current || []),
+    ...(shortlistData.calibrated || [])
+  ];
 
-  (shortlistData.calibrated || []).forEach(m => {
-    if (!map.has(m.id)) map.set(m.id, m);
+  combined.forEach(m => {
+    const existing = map.get(m.id);
+
+    // Prefer version WITH odds
+    const hasOdds = m.odds && (m.odds.o25 || m.odds.u25);
+    const existingHasOdds = existing?.odds && (existing.odds.o25 || existing.odds.u25);
+
+    if (!existing || (!existingHasOdds && hasOdds)) {
+      map.set(m.id, m);
+    }
   });
 
   return Array.from(map.values());
@@ -378,8 +441,8 @@ function getSortedData() {
         break;
       }
       case 'kickoff':
-        va = a.odds?.commenceTime || a.kickoff || '';
-        vb = b.odds?.commenceTime || b.kickoff || '';
+        va = deriveKickoffDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        vb = deriveKickoffDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER;
         break;
       case 'match':
         va = a.homeTeam || '';
@@ -417,6 +480,8 @@ function renderShortlist() {
   var wrap = document.getElementById('shortlistWrap');
   var empty = document.getElementById('emptyState');
   var data = getSortedData();
+
+  document.getElementById('statShortlisted').textContent = data.length;
 
   if (!data.length) {
     wrap.innerHTML = '';
@@ -473,7 +538,11 @@ function buildMatchRow(m, i) {
   var mktA = a ? (isU25 ? a.u25 : a.o25) : null;
   var prob = mktA?.probability;
   var fair = mktA?.fairOdds;
-  var edge = mktA?.edge;
+  var oddsData = isU25 ? m.odds?.u25 : m.odds?.o25;
+  var displayedPrice = oddsData?.price ?? mktA?.marketOdds ?? null;
+  var edge = (fair != null && displayedPrice != null)
+    ? ((displayedPrice / fair) - 1) * 100
+    : null;
   var probPct = prob != null ? Math.round(prob * 100) : null;
   var probColor = probPct >= 65 ? '#6ee7b7' : probPct >= 50 ? '#fbbf24' : '#8b9ab0';
 

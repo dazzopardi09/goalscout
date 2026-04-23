@@ -49,8 +49,11 @@ function isInPlay(commenceTime) {
 
 // ── Known name overrides ─────────────────────────────────────
 const KNOWN_NAME_OVERRIDES = {
-  'gimnasia':      'gimnasia la plata',
-  'e. rio cuarto': 'atletico de rio cuarto',
+  'gimnasia': 'gimnasia la plata',
+  'e. rio cuarto': 'estudiantes rio cuarto',
+  'e rio cuarto': 'estudiantes rio quarto',
+  'd. riestra': 'deportivo riestra',
+  'd riestra': 'deportivo riestra',
 };
 
 // ── Daily quota tracking ─────────────────────────────────────
