@@ -256,7 +256,15 @@ docker compose up -d
 # Dashboard at http://<unraid-ip>:3030
 ```
 
-### Deploy changes
+## Normal Deploy
+```bash
+cd /mnt/user/appdata/goalscout
+docker compose down
+docker compose up --build -d
+docker logs -f goalscout
+```
+
+### Hard reset Deploy
 
 ```bash
 cd /mnt/user/appdata/goalscout

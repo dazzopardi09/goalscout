@@ -200,7 +200,7 @@ async function oddsRequest(path, params = {}) {
 
 async function fetchAvailableSports() {
   if (isCacheValid(cache.sports, SPORTS_CACHE_TTL)) {
-    console.log(`[odds-api] using cached sports list (${cache.sports.data.length} competitions, from ${cache.sports.data === null ? 'none' : 'cache'})`);
+    console.log(`[odds-api] using cached sports list (${cache.sports.data.length} competitions)`);
     return cache.sports.data;
   }
 
@@ -208,7 +208,7 @@ async function fetchAvailableSports() {
   const data = await oddsRequest('/v4/sports', { group: 'soccer' });
   if (!data) return cache.sports.data || [];
 
-  const active = data.filter(s => s.active);
+  const active = data.filter(s => s.active && s.key.startsWith('soccer_'));
   console.log(`[odds-api] ${active.length} active soccer competitions`);
   cache.sports = { data: active, timestamp: Date.now() };
   saveDiskCache();
@@ -272,40 +272,76 @@ async function buildBettableLeagueMap() {
 // ── Slug → Odds API key mapping ──────────────────────────────
 
 const SLUG_TO_ODDS_MAP = {
-  'england':        'soccer_epl',
-  'england2':       'soccer_england_efl_cup',
-  'germany':        'soccer_germany_bundesliga',
-  'germany2':       'soccer_germany_bundesliga2',
-  'italy':          'soccer_italy_serie_a',
-  'italy2':         'soccer_italy_serie_b',
-  'spain':          'soccer_spain_la_liga',
-  'spain2':         'soccer_spain_segunda_division',
-  'france':         'soccer_france_ligue_one',
-  'france2':        'soccer_france_ligue_two',
-  'netherlands':    'soccer_netherlands_eredivisie',
-  'portugal':       'soccer_portugal_primeira_liga',
-  'belgium':        'soccer_belgium_first_div',
-  'austria':        'soccer_austria_bundesliga',
-  'denmark':        'soccer_denmark_superliga',
-  'sweden':         'soccer_sweden_allsvenskan',
-  'norway':         'soccer_norway_eliteserien',
-  'finland':        'soccer_finland_veikkausliiga',
-  'switzerland':    'soccer_switzerland_superleague',
-  'turkey':         'soccer_turkey_super_league',
-  'greece':         'soccer_greece_super_league',
-  'poland':         'soccer_poland_ekstraklasa',
-  'czechrepublic':  'soccer_czech_football_league',
-  'scotland':       'soccer_spl',
-  'australia':      'soccer_australia_aleague',
-  'japan':          'soccer_japan_j_league',
-  'southkorea':     'soccer_korea_kleague1',
-  'brazil':         'soccer_brazil_serie_a',
-  'argentina':      'soccer_argentina_primera_division',
-  'russia':         'soccer_russia_premier_league',
-  'ukraine':        'soccer_ukraine_premier_league',
-  'cleague':        'soccer_uefa_champs_league',
-  'uefa':           'soccer_uefa_europa_league',
-  'uefaconference': 'soccer_uefa_europa_conference_league',
+  // England
+  england: 'soccer_epl',
+  england2: 'soccer_efl_champ',
+  england3: 'soccer_england_league1',
+  england4: 'soccer_england_league2',
+  'cup-england1': 'soccer_fa_cup',
+
+  // Germany
+  germany: 'soccer_germany_bundesliga',
+  germany2: 'soccer_germany_bundesliga2',
+  germany3: 'soccer_germany_liga3',
+  'cup-germany1': 'soccer_germany_dfb_pokal',
+
+  // Italy
+  italy: 'soccer_italy_serie_a',
+  italy2: 'soccer_italy_serie_b',
+  'cup-italy1': 'soccer_italy_coppa_italia',
+
+  // Spain
+  spain: 'soccer_spain_la_liga',
+  spain2: 'soccer_spain_segunda_division',
+
+  // France
+  france: 'soccer_france_ligue_one',
+  france2: 'soccer_france_ligue_two',
+  'cup-france1': 'soccer_france_coupe_de_france',
+
+  // Netherlands / Portugal / Belgium / Austria
+  netherlands: 'soccer_netherlands_eredivisie',
+  portugal: 'soccer_portugal_primeira_liga',
+  belgium: 'soccer_belgium_first_div',
+  austria: 'soccer_austria_bundesliga',
+
+  // Nordics
+  denmark: 'soccer_denmark_superliga',
+  sweden: 'soccer_sweden_allsvenskan',
+  sweden2: 'soccer_sweden_superettan',
+  norway: 'soccer_norway_eliteserien',
+  finland: 'soccer_finland_veikkausliiga',
+
+  // Europe
+  switzerland: 'soccer_switzerland_superleague',
+  turkey: 'soccer_turkey_super_league',
+  greece: 'soccer_greece_super_league',
+  poland: 'soccer_poland_ekstraklasa',
+  scotland: 'soccer_spl',
+  russia: 'soccer_russia_premier_league',
+  ireland: 'soccer_league_of_ireland',
+
+  // South America
+  argentina: 'soccer_argentina_primera_division',
+  brazil: 'soccer_brazil_campeonato',
+  brazil2: 'soccer_brazil_serie_b',
+  chile: 'soccer_chile_campeonato',
+  'copa-libertadores': 'soccer_conmebol_copa_libertadores',
+  'copa-sudamericana': 'soccer_conmebol_copa_sudamericana',
+
+  // Asia / Oceania / Americas
+  australia: 'soccer_australia_aleague',
+  japan: 'soccer_japan_j_league',
+  southkorea: 'soccer_korea_kleague1',
+  china: 'soccer_china_superleague',
+  saudiarabia: 'soccer_saudi_arabia_pro_league',
+  mexico: 'soccer_mexico_ligamx',
+  usa: 'soccer_usa_mls',
+
+  // UEFA
+  cleague: 'soccer_uefa_champs_league',
+  uefa: 'soccer_uefa_europa_league',
+  uefaconference: 'soccer_uefa_europa_conference_league',
 };
 
 function isBettableLeague(slug, activeSportsMap) {
@@ -361,7 +397,7 @@ async function fetchOddsForShortlist(shortlistedMatches) {
     return new Map();
   }
 
-  console.log(`[odds-api] fetching odds for ${oddsKeys.length} competitions (UK region)...`);
+  console.log(`[odds-api] fetching odds for ${oddsKeys.length} competitions (${config.ODDS_REGIONS} region)...`);
 
   const allOddsData = new Map();
   const leagueEventNames = new Map();

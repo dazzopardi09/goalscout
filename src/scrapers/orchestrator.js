@@ -70,6 +70,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       try {
         bettableMap = await buildBettableLeagueMap();
         console.log(`[orchestrator] ${bettableMap.size} bettable competitions on Odds API`);
+  
         for (const [slug, oddsKey] of Object.entries(SLUG_TO_ODDS_MAP)) {
           if (bettableMap.has(oddsKey)) bettableSlugs.push(slug);
         }
@@ -82,6 +83,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     // ── Step 2: Scrape SoccerSTATS ────────────────────────
     refreshState.progress = 'Scraping matches page...';
     const { matches: todayMatches, leagueSlugs: todaySlugs } = await scrapeMatchesPage(1);
+    console.log('[debug] leagues on SoccerSTATS today:', todaySlugs.length, todaySlugs);
 
     refreshState.progress = 'Scraping tomorrow...';
     let tomorrowMatches = [];
@@ -92,13 +94,20 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       console.warn('[orchestrator] tomorrow scrape failed:', e.message);
     }
 
-    const allScraped = [...todayMatches, ...tomorrowMatches];
+    const allScraped = [...todayMatches];
     const deduped = new Map();
     for (const m of allScraped) {
       if (!deduped.has(m.id)) deduped.set(m.id, m);
     }
     let allMatches = Array.from(deduped.values());
     console.log(`[orchestrator] total scraped matches: ${allMatches.length}`);
+
+    // DEBUG — matches per league
+    const byLeague = {};
+    for (const m of allMatches) {
+      byLeague[m.leagueSlug] = (byLeague[m.leagueSlug] || 0) + 1;
+    }
+    // console.log('[debug] matches by league:', byLeague);
 
     // ── Step 3: Tag bettable matches ──────────────────────
     if (bettableSlugs.length > 0) {
@@ -115,9 +124,10 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
 
     // ── Step 4: League stats for bettable leagues ─────────
     const leagueStatsMap = {};
+    const scrapedSlugs = [...new Set(allMatches.map(m => m.leagueSlug))];
     const slugsToScrape = bettableSlugs.length > 0
-      ? bettableSlugs.filter(s => todaySlugs.includes(s) || allMatches.some(m => m.leagueSlug === s))
-      : todaySlugs.slice(0, 20);
+      ? scrapedSlugs.filter(slug => bettableSlugs.includes(slug))
+      : scrapedSlugs;
 
     refreshState.progress = `Scraping ${slugsToScrape.length} league pages...`;
     for (const slug of slugsToScrape) {
