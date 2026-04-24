@@ -9,6 +9,7 @@
 2. `docker rmi goalscout goalscout-goalscout 2>/dev/null || true`
 3. `docker builder prune -f`
 4. `docker compose up --build -d`
+5. `docker logs -f goalscout`
 
 Never run `docker build` separately. Compose builds its own image named `goalscout-goalscout`.
 

@@ -251,7 +251,7 @@ function getPredictionStats() {
   const resultMap = new Map();
   for (const r of results) resultMap.set(r.fixtureId, r);
 
-  function resolveStatus(p) {
+  function resolveStatus(p, market) {
     if (p.status === 'settled_won' || p.status === 'settled_lost' || p.status === 'void') {
       return p.status;
     }
@@ -261,9 +261,9 @@ function getPredictionStats() {
 
     const total = r.totalGoals ?? ((r.fullTimeHome ?? 0) + (r.fullTimeAway ?? 0));
 
-    if (p.market === 'over_2.5')  return total > 2.5 ? 'settled_won' : 'settled_lost';
-    if (p.market === 'under_2.5') return total < 2.5 ? 'settled_won' : 'settled_lost';
-    if (p.market === 'btts')      return (r.bttsYes || (r.fullTimeHome > 0 && r.fullTimeAway > 0)) ? 'settled_won' : 'settled_lost';
+    if (market === 'over_2.5')  return total > 2.5 ? 'settled_won' : 'settled_lost';
+    if (market === 'under_2.5') return total < 2.5 ? 'settled_won' : 'settled_lost';
+    if (market === 'btts')      return (r.bttsYes || (r.fullTimeHome > 0 && r.fullTimeAway > 0)) ? 'settled_won' : 'settled_lost';
 
     return 'pending';
   }
@@ -279,16 +279,50 @@ function getPredictionStats() {
     return resultMap.get(p.fixtureId)?.settledAt || null;
   }
 
-  const annotated = predictions.map(p => ({
-    ...p,
-    status:        resolveStatus(p),
-    result:        resolveResult(p),
-    settledAt:     resolveSettledAt(p),
-    grade:         p.grade || p.inputs?.grade || '—',
-    direction:     p.direction || (p.market === 'under_2.5' ? 'u25' : 'o25'),
-    method:        p.method || 'current',
-    selectionType: p.selectionType || null,
-  }));
+  // ── Reconcile direction and market ───────────────────────────
+  // Historical records may have market and direction out of sync due to
+  // bugs that existed before the away stats fix and model rewrites.
+  // Direction is the authoritative field — derive market from it.
+  // Exception: btts records pre-date the direction field; leave those alone.
+  // Records with no direction at all fall back to deriving direction from market.
+  function reconcile(p) {
+    const rawDirection = p.direction || null;
+    const rawMarket = p.market || null;
+
+    // BTTS is a legacy market that predates the direction field — preserve it.
+    if (rawMarket === 'btts') {
+      return {
+        direction: rawDirection || 'o25', // btts was always o25-adjacent
+        market: 'btts',
+      };
+    }
+
+    if (rawDirection) {
+      // Direction is set — it is authoritative. Derive market from it.
+      const market = rawDirection === 'u25' ? 'under_2.5' : 'over_2.5';
+      return { direction: rawDirection, market };
+    }
+
+    // No direction — derive it from market.
+    const direction = rawMarket === 'under_2.5' ? 'u25' : 'o25';
+    const market = rawMarket || 'over_2.5';
+    return { direction, market };
+  }
+
+  const annotated = predictions.map(p => {
+    const { direction, market } = reconcile(p);
+    return {
+      ...p,
+      direction,
+      market,
+      status:        resolveStatus(p, market),
+      result:        resolveResult(p),
+      settledAt:     resolveSettledAt(p),
+      grade:         p.grade || p.inputs?.grade || '—',
+      method:        p.method || 'current',
+      selectionType: p.selectionType || null,
+    };
+  });
 
   function marketStats(preds) {
     const settled = preds.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
@@ -329,9 +363,6 @@ function getPredictionStats() {
     }
 
     // Units and ROI only count predictions where odds were available.
-    // Predictions with no marketOdds can't have P&L calculated — a won bet
-    // at null odds is not a win in any financial sense.
-    // Hit rate and Brier score still include all settled predictions.
     const settledWithOdds = settled.filter(p => p.marketOdds != null);
 
     const units = settledWithOdds.reduce((s, p) => {

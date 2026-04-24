@@ -7,11 +7,18 @@
 //   2. Scrape SoccerSTATS for matches in bettable leagues (today only)
 //   3. Score each match in both directions (O2.5 and U2.5)
 //      → direction with higher score wins → one call per match
-//   4. Fetch Over AND Under odds for shortlisted matches
+//   4. Fetch Over AND Under odds for ALL matches with a clear direction
+//      (not just the scoring shortlist — calibrated needs its own pool)
 //   5. Attach correct odds based on match direction
 //   6. Run probability engine, apply floor, THEN log predictions
 //   7. Scrape match details for top shortlisted
 //   8. Write to disk
+//
+// KEY ARCHITECTURE NOTE:
+//   Odds are fetched for ALL bettable matches that have a clear direction
+//   (o25score != u25score), not just those that passed the scoring threshold.
+//   This gives the calibrated model its own independent candidate pool
+//   instead of being forced to choose only from the current shortlist.
 // ─────────────────────────────────────────────────────────────
 
 const { scrapeMatchesPage, scrapeLeaguePage, scrapeMatchDetail } = require('./match-discovery');
@@ -70,7 +77,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       try {
         bettableMap = await buildBettableLeagueMap();
         console.log(`[orchestrator] ${bettableMap.size} bettable competitions on Odds API`);
-  
+
         for (const [slug, oddsKey] of Object.entries(SLUG_TO_ODDS_MAP)) {
           if (bettableMap.has(oddsKey)) bettableSlugs.push(slug);
         }
@@ -139,29 +146,43 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       m.day = 'Today';
     }
 
-    // ── Step 6: Fetch odds (Over AND Under) ───────────────
-    if (config.ODDS_API_KEYS.length > 0 && shortlisted.length > 0) {
-      refreshState.progress = 'Fetching Over/Under odds...';
-      try {
-        const oddsMap = await fetchOddsForShortlist(shortlisted);
-        let matched = 0, unmatched = 0;
+    // ── Step 6: Fetch odds for ALL matches with a clear direction ──
+    //
+    // IMPORTANT: odds are fetched for every scored match that has a
+    // clear direction (not a tie), NOT just the scoring shortlist.
+    // This is what allows the calibrated model to independently
+    // shortlist matches that the scoring system's threshold excluded.
+    // Without this, calibrated can only choose from the current
+    // shortlist and the two models are guaranteed to converge.
+    if (config.ODDS_API_KEYS.length > 0) {
+      // All scored matches with a clear direction are odds candidates.
+      // The scoring shortlist is a strict subset of this.
+      const oddsCandidates = scored.filter(m => m.direction != null);
 
-        for (const m of shortlisted) {
-          const odds = matchOddsToMatch(m, oddsMap);
-          if (odds) {
-            m.odds = odds;
-            matched++;
-            const relevantOdds = m.direction === 'u25' ? odds.u25 : odds.o25;
-            if (relevantOdds) {
-              console.log(`[orchestrator] ${m.direction.toUpperCase()} ${m.homeTeam} vs ${m.awayTeam}: ${relevantOdds.price} (${relevantOdds.bookmaker})`);
+      if (oddsCandidates.length > 0) {
+        refreshState.progress = 'Fetching Over/Under odds...';
+        try {
+          const oddsMap = await fetchOddsForShortlist(oddsCandidates);
+          let matched = 0, unmatched = 0;
+
+          for (const m of oddsCandidates) {
+            const odds = matchOddsToMatch(m, oddsMap);
+            if (odds) {
+              m.odds = odds;
+              matched++;
+              const relevantOdds = m.direction === 'u25' ? odds.u25 : odds.o25;
+              if (relevantOdds) {
+                console.log(`[orchestrator] ${m.direction.toUpperCase()} ${m.homeTeam} vs ${m.awayTeam}: ${relevantOdds.price} (${relevantOdds.bookmaker})`);
+              }
+            } else {
+              unmatched++;
             }
-          } else {
-            unmatched++;
           }
+
+          console.log(`[orchestrator] odds matched: ${matched}/${oddsCandidates.length} (${unmatched} unmatched)`);
+        } catch (e) {
+          console.warn('[orchestrator] odds fetch failed:', e.message);
         }
-        console.log(`[orchestrator] odds matched: ${matched}/${shortlisted.length} (${unmatched} unmatched)`);
-      } catch (e) {
-        console.warn('[orchestrator] odds fetch failed:', e.message);
       }
     }
 
@@ -169,7 +190,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     refreshState.progress = 'Calculating probabilities...';
     const minProb = config.THRESHOLDS?.MIN_PROB || 0;
 
-    // analyse every scored match once, then derive both model paths
+    // Analyse every scored match once, then derive both model paths.
     for (const m of scored) {
       try {
         const currentAnalysis = analyseMatch(m, leagueStatsMap[m.leagueSlug] || {});
@@ -206,9 +227,9 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       }
     }
 
-    // current model = existing direction from shortlist/scoring engine
-    const currentShortlisted = scored
-      .filter(m => m.direction != null)
+    // Current model: uses direction from the scoring engine.
+    // Only includes matches that passed the scoring threshold (via shortlisted).
+    const currentShortlisted = shortlisted
       .map(m => ({
         ...m,
         analysis: m.methodAnalyses?.current || null,
@@ -220,13 +241,15 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
           : m.analysis?.o25?.probability;
         if (prob == null || prob < minProb) return false;
         // Require odds for the recommended direction.
-        // Without a price, edge is incalculable and the bet cannot be placed.
         const relevantOdds = m.direction === 'u25' ? m.odds?.u25 : m.odds?.o25;
         return relevantOdds?.price != null;
       });
 
-    // calibrated model = independent direction + shortlist from calibrated probabilities
+    // Calibrated model: direction from calibrated probabilities, independent of
+    // the scoring engine's threshold. Draws from ALL scored matches that have
+    // a clear direction AND odds — not just the scoring shortlist.
     const calibratedShortlisted = scored
+      .filter(m => m.direction != null) // must have a clear direction
       .map(m => {
         const analysis = m.methodAnalyses?.calibrated;
         const o25 = analysis?.o25?.probability;
@@ -239,7 +262,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
 
         if (dirProb < minProb) return null;
 
-        // Require odds for the calibrated direction too.
+        // Require odds for the calibrated direction.
         const relevantOdds = direction === 'u25' ? m.odds?.u25 : m.odds?.o25;
         if (!relevantOdds?.price) return null;
 
@@ -304,12 +327,6 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     }
 
     // ── Step 9: Preserve in-progress matches from previous shortlist ──
-    // If a manual refresh fires while a match is in play, SoccerSTATS may
-    // no longer list it — so it would vanish from the new shortlist.
-    // We carry forward any match from the previous shortlist whose kickoff
-    // was within the last 3 hours (still plausibly in play).
-    // Requires commenceTime (set when odds were found). Matches without
-    // odds rely on SoccerSTATS still listing them.
     try {
       const prevShortlist = readJSON(config.SHORTLIST_FILE) || {};
       const nowMs = Date.now();
@@ -352,25 +369,25 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       },
     });
     writeJSON(config.META_FILE, {
-      lastRefresh:      new Date().toISOString(),
-      totalScraped:     allMatches.length,
-      bettableCount:    matchesToScore.length,
-      scoredCount:      scored.length,
-      shortlistCount:   shortlistForDetails.length,
-      currentShortlistCount: currentShortlisted.length,
-      calibratedShortlistCount: calibratedShortlisted.length,
-      bettableLeagues:  bettableSlugs.length,
-      leaguesOnPage:    todaySlugs.length,
-      leagueStatsFound: Object.keys(leagueStatsMap).length,
+      lastRefresh:                  new Date().toISOString(),
+      totalScraped:                 allMatches.length,
+      bettableCount:                matchesToScore.length,
+      scoredCount:                  scored.length,
+      shortlistCount:               shortlistForDetails.length,
+      currentShortlistCount:        currentShortlisted.length,
+      calibratedShortlistCount:     calibratedShortlisted.length,
+      bettableLeagues:              bettableSlugs.length,
+      leaguesOnPage:                todaySlugs.length,
+      leagueStatsFound:             Object.keys(leagueStatsMap).length,
     });
 
-    refreshState.status        = 'done';
-    refreshState.lastRefresh   = new Date().toISOString();
-    refreshState.matchCount    = scored.length;
+    refreshState.status         = 'done';
+    refreshState.lastRefresh    = new Date().toISOString();
+    refreshState.matchCount     = scored.length;
     refreshState.shortlistCount = shortlistForDetails.length;
-    refreshState.bettableCount = matchesToScore.length;
-    refreshState.progress      = 'Complete';
-    refreshState.lastError     = null;
+    refreshState.bettableCount  = matchesToScore.length;
+    refreshState.progress       = 'Complete';
+    refreshState.lastError      = null;
 
     console.log(`[orchestrator] done. ${allMatches.length} scraped → ${matchesToScore.length} bettable → ${shortlistForDetails.length} unique shortlisted (${currentShortlisted.length} current, ${calibratedShortlisted.length} calibrated)`);
     return refreshState;
