@@ -46,14 +46,14 @@ function logPrediction(match, analysis, method = 'current', selectionType = null
   const today = new Date().toISOString().slice(0, 10);
   const existing = readJSONL(config.PREDICTIONS_FILE);
 
-  // one record per fixture + method + day
-  if (existing.some(p =>
-    p.fixtureId === match.id &&
-    (p.method || 'current') === method &&
-    p.predictionDate === today
-  )) {
-    return;
-  }
+// one record per fixture + method + market/direction
+if (existing.some(p =>
+  p.fixtureId === match.id &&
+  (p.method || 'current') === method &&
+  (p.direction || null) === (match.direction || null)
+)) {
+  return;
+}
 
   const isU25 = match.direction === 'u25';
   const market = isU25 ? 'under_2.5' : 'over_2.5';
@@ -175,7 +175,7 @@ function settlePrediction(fixtureId, market, method, { homeGoals, awayGoals, clo
     const clvPct = (p.marketOdds != null && closingOdds != null)
       ? Math.round(((p.marketOdds / closingOdds) - 1) * 10000) / 100
       : null;
-
+// one record per fixture + method + day
     updated = true;
 
     return {

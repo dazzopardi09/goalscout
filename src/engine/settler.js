@@ -12,8 +12,10 @@
 // We use the 'daysFrom' parameter to look back up to 3 days.
 // ─────────────────────────────────────────────────────────────
 
+
 const config = require('../config');
 const { readJSONL, settlePrediction, updatePreKickoffOdds } = require('../engine/history');
+const { getOddsKey } = require('../odds/the-odds-api');
 
 // ── Odds API request helper ───────────────────────────────────
 
@@ -33,17 +35,13 @@ async function oddsApiRequest(path, params = {}) {
       const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
 
       if (!resp.ok) {
-        console.warn(
-          `[settler] odds API ${path} returned ${resp.status} for key ...${key.slice(-6)}`
-        );
+        console.warn(`[settler] odds API ${path} returned ${resp.status} for key ...${key.slice(-6)}`);
         continue;
       }
 
       return await resp.json();
     } catch (err) {
-      console.warn(
-        `[settler] odds API request failed for key ...${key.slice(-6)}: ${err.message}`
-      );
+      console.warn(`[settler] odds API request failed for key ...${key.slice(-6)}: ${err.message}`);
     }
   }
 
@@ -61,10 +59,7 @@ function normalise(name) {
     .toLowerCase()
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]/g, ' ')
-    .replace(
-      /\b(fc|ac|cf|sc|bk|fk|if|ik|sk|nk|as|sv|cd|club|athletic|atletico)\b/g,
-      ' '
-    )
+    .replace(/\b(fc|ac|cf|sc|bk|fk|if|ik|sk|nk|as|sv|cd|club|athletic|atletico)\b/g, ' ')
     .replace(/\butd\b/g, 'united')
     .replace(/\bmtjylland\b/g, 'midtjylland')
     .replace(/\bkobenhavn\b/g, 'copenhagen')
@@ -73,6 +68,7 @@ function normalise(name) {
     .replace(/\bdefensa y j\b/g, 'defensa y justicia')
     .replace(/\bd\.?\s*riestra\b/g, 'deportivo riestra')
     .replace(/\be\.?\s*rio cuarto\b/g, 'estudiantes rio cuarto')
+    .replace(/\bestudiantes de rio cuarto\b/g, 'estudiantes rio cuarto')
     .replace(/\bman utd\b/g, 'manchester united')
     .replace(/\bman city\b/g, 'manchester city')
     .replace(/\bpsv eindhoven\b/g, 'psv')
@@ -112,11 +108,10 @@ function teamsMatch(apiHome, apiAway, predHome, predAway) {
 
   if (direct) return true;
 
-  const swapped =
+  return (
     singleTeamMatch(apiHome, predAway) &&
-    singleTeamMatch(apiAway, predHome);
-
-  return swapped;
+    singleTeamMatch(apiAway, predHome)
+  );
 }
 
 // ── Fetch scores and settle ───────────────────────────────────
@@ -131,11 +126,9 @@ async function fetchScoresAndSettle() {
 
   console.log(`[settler] ${pending.length} pending predictions to check`);
 
-  const { mapLeagueSlugToSportKey } = require('../odds/the-odds-api');
-
   const sportKeys = new Set();
   for (const p of pending) {
-    const key = mapLeagueSlugToSportKey ? mapLeagueSlugToSportKey(p.leagueSlug) : null;
+    const key = getOddsKey(p.leagueSlug);
     if (key) sportKeys.add(key);
   }
 
@@ -145,8 +138,9 @@ async function fetchScoresAndSettle() {
     const scores = await oddsApiRequest(`/v4/sports/${sportKey}/scores`, {
       daysFrom: 3,
     });
+
     if (scores && Array.isArray(scores)) {
-      allScores.push(...scores);
+      allScores.push(...scores.map(s => ({ ...s, sportKey })));
     }
   }
 
@@ -163,8 +157,15 @@ async function fetchScoresAndSettle() {
 
   for (const p of pending) {
     try {
+      const sportKey = getOddsKey(p.leagueSlug);
+      if (!sportKey) {
+        skipped++;
+        continue;
+      }
+
       const match = allScores.find(s => {
         if (!s.completed) return false;
+        if (s.sportKey !== sportKey) return false;
         return teamsMatch(s.home_team, s.away_team, p.homeTeam, p.awayTeam);
       });
 
@@ -185,39 +186,29 @@ async function fetchScoresAndSettle() {
 
       let closingOdds = null;
 
-      if (p.leagueSlug) {
-        const sportKey = mapLeagueSlugToSportKey ? mapLeagueSlugToSportKey(p.leagueSlug) : null;
+      const oddsData = await oddsApiRequest(`/v4/sports/${sportKey}/odds`, {
+        regions: config.ODDS_REGIONS || 'au,uk',
+        markets: 'totals',
+        oddsFormat: 'decimal',
+      });
 
-        if (sportKey) {
-          const oddsData = await oddsApiRequest(`/v4/sports/${sportKey}/odds`, {
-            regions: 'au,uk',
-            markets: 'totals',
-            oddsFormat: 'decimal',
-          });
+      if (oddsData && Array.isArray(oddsData)) {
+        const event = oddsData.find(e =>
+          teamsMatch(e.home_team, e.away_team, p.homeTeam, p.awayTeam)
+        );
 
-          if (oddsData && Array.isArray(oddsData)) {
-            const event = oddsData.find(e =>
-              teamsMatch(e.home_team, e.away_team, p.homeTeam, p.awayTeam)
-            );
+        if (event) {
+          for (const bk of event.bookmakers || []) {
+            const market = bk.markets?.find(m => m.key === 'totals');
+            if (!market) continue;
 
-            if (event) {
-              for (const bk of event.bookmakers || []) {
-                const market = bk.markets?.find(m => m.key === 'totals');
-                if (!market) continue;
+            const selection = p.market === 'over_2.5'
+              ? market.outcomes?.find(o => o.name === 'Over' && parseFloat(o.point) === 2.5)
+              : market.outcomes?.find(o => o.name === 'Under' && parseFloat(o.point) === 2.5);
 
-                const selection = p.market === 'over_2.5'
-                  ? market.outcomes?.find(
-                      o => o.name === 'Over' && parseFloat(o.point) === 2.5
-                    )
-                  : market.outcomes?.find(
-                      o => o.name === 'Under' && parseFloat(o.point) === 2.5
-                    );
-
-                if (selection) {
-                  closingOdds = selection.price;
-                  break;
-                }
-              }
+            if (selection) {
+              closingOdds = selection.price;
+              break;
             }
           }
         }
@@ -226,12 +217,8 @@ async function fetchScoresAndSettle() {
       const wasSettled = settlePrediction(
         p.fixtureId,
         p.market,
-        (p.method || 'current'),
-        {
-          homeGoals,
-          awayGoals,
-          closingOdds,
-        }
+        p.method || 'current',
+        { homeGoals, awayGoals, closingOdds }
       );
 
       if (wasSettled) {
@@ -243,10 +230,7 @@ async function fetchScoresAndSettle() {
         skipped++;
       }
     } catch (err) {
-      console.error(
-        `[settler] error settling ${p.homeTeam} vs ${p.awayTeam}:`,
-        err.message
-      );
+      console.error(`[settler] error settling ${p.homeTeam} vs ${p.awayTeam}:`, err.message);
       errors++;
     }
   }
@@ -277,16 +261,15 @@ async function fetchCurrentOddsForPending() {
 
   console.log(`[settler] fetching pre-KO odds for ${toUpdate.length} predictions`);
 
-  const { mapLeagueSlugToSportKey } = require('../odds/the-odds-api');
   let updated = 0;
 
   for (const p of toUpdate) {
     try {
-      const sportKey = mapLeagueSlugToSportKey ? mapLeagueSlugToSportKey(p.leagueSlug) : null;
+      const sportKey = getOddsKey(p.leagueSlug);
       if (!sportKey) continue;
 
       const oddsData = await oddsApiRequest(`/v4/sports/${sportKey}/odds`, {
-        regions: 'au,uk',
+        regions: config.ODDS_REGIONS || 'au,uk',
         markets: 'totals',
         oddsFormat: 'decimal',
       });
@@ -300,17 +283,14 @@ async function fetchCurrentOddsForPending() {
       if (!event) continue;
 
       let currentPrice = null;
+
       for (const bk of event.bookmakers || []) {
         const market = bk.markets?.find(m => m.key === 'totals');
         if (!market) continue;
 
         const selection = p.market === 'over_2.5'
-          ? market.outcomes?.find(
-              o => o.name === 'Over' && parseFloat(o.point) === 2.5
-            )
-          : market.outcomes?.find(
-              o => o.name === 'Under' && parseFloat(o.point) === 2.5
-            );
+          ? market.outcomes?.find(o => o.name === 'Over' && parseFloat(o.point) === 2.5)
+          : market.outcomes?.find(o => o.name === 'Under' && parseFloat(o.point) === 2.5);
 
         if (selection) {
           currentPrice = selection.price;
@@ -323,7 +303,7 @@ async function fetchCurrentOddsForPending() {
       const wasUpdated = updatePreKickoffOdds(
         p.fixtureId,
         p.market,
-        (p.method || 'current'),
+        p.method || 'current',
         currentPrice
       );
 
@@ -331,10 +311,7 @@ async function fetchCurrentOddsForPending() {
 
       await new Promise(r => setTimeout(r, 300));
     } catch (err) {
-      console.warn(
-        `[settler] pre-KO odds fetch failed for ${p.homeTeam} vs ${p.awayTeam}:`,
-        err.message
-      );
+      console.warn(`[settler] pre-KO odds fetch failed for ${p.homeTeam} vs ${p.awayTeam}:`, err.message);
     }
   }
 

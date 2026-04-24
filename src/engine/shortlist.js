@@ -218,7 +218,11 @@ function buildShortlist(matches, leagueStatsMap = {}) {
       m.direction != null &&        // ties excluded
       m.score >= minWinning          // must meet threshold in winning direction
     )
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => {
+      const at = a.commenceTime ? new Date(a.commenceTime).getTime() : Number.MAX_SAFE_INTEGER;
+      const bt = b.commenceTime ? new Date(b.commenceTime).getTime() : Number.MAX_SAFE_INTEGER;
+      return at - bt;
+    });
 
   return { all: scored, shortlisted };
 }
