@@ -204,11 +204,11 @@
 // ── State ─────────────────────────────────────────────────────
 let shortlistData = { current: [], calibrated: [], comparison: {} };
 let filters = { method: 'all', grade: 'all', direction: 'all', league: 'all' };
-let currentSort = { key: 'prob', dir: 'desc' };
+let currentSort = { key: 'kickoff', dir: 'asc' };
 let perfData = null;
 let activePerfMarket = 'over_2.5';
 let statsData = null;
-let statsMethod = 'all';
+let statsMethod = 'current';
 
 // ── Helpers ───────────────────────────────────────────────────
 function pctClass(v) { return v == null ? 'pct-cold' : v >= 65 ? 'pct-hot' : v >= 50 ? 'pct-warm' : 'pct-cold'; }
@@ -253,7 +253,7 @@ function parseKickoffParts(kickoff) {
 }
 
 function deriveKickoffDate(m) {
-  // If we have Odds API commence time, trust it exactly.
+  // Odds API commenceTime is a proper UTC timestamp — trust it directly.
   if (m.odds && m.odds.commenceTime) {
     return new Date(m.odds.commenceTime);
   }
@@ -263,7 +263,11 @@ function deriveKickoffDate(m) {
 
   var now = getMelbourneNow();
 
-  var d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), kp.hour - 1, kp.minute, 0, 0);
+  // SoccerSTATS displays kickoff times in AEDT (UTC+11) regardless of DST.
+  // Subtract 1 hour to convert to current Melbourne time (AEST = UTC+10).
+  // The % 24 handles the midnight edge case (00:xx → 23:xx previous hour).
+  var h = (kp.hour - 1 + 24) % 24;
+  var d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, kp.minute, 0, 0);
 
   var dayLabel = (m.day || '').toLowerCase().trim();
 
@@ -273,7 +277,12 @@ function deriveKickoffDate(m) {
   }
 
   if (dayLabel === 'today') {
-    if (d.getTime() < now.getTime()) {
+    var minsAgo = (now.getTime() - d.getTime()) / 60000;
+    // Only shift to tomorrow if the kickoff was more than 3 hours ago.
+    // Matches in-progress or recently started stay on today's date.
+    // Early AEST kickoffs for the next calendar day (e.g. 01:00 Finnish)
+    // appear as 18+ hours "ago" and are correctly shifted to tomorrow.
+    if (minsAgo > 180) {
       d.setDate(d.getDate() + 1);
     }
     return d;
@@ -315,6 +324,9 @@ function getActiveShortlist() {
   if (filters.method === 'current') return shortlistData.current || [];
   if (filters.method === 'calibrated') return shortlistData.calibrated || [];
 
+  // Key by fixture+direction so BOTH rows show when models disagree on direction.
+  // If both models agree on direction (same fixture+direction), show once,
+  // preferring whichever has odds data.
   const map = new Map();
 
   const combined = [
@@ -323,14 +335,18 @@ function getActiveShortlist() {
   ];
 
   combined.forEach(m => {
-    const existing = map.get(m.id);
+    const key = `${m.id}__${m.direction || 'unknown'}`;
+    const existing = map.get(key);
 
-    // Prefer version WITH odds
-    const hasOdds = m.odds && (m.odds.o25 || m.odds.u25);
-    const existingHasOdds = existing?.odds && (existing.odds.o25 || existing.odds.u25);
-
-    if (!existing || (!existingHasOdds && hasOdds)) {
-      map.set(m.id, m);
+    if (!existing) {
+      map.set(key, m);
+    } else {
+      // Same fixture+direction from both models — prefer the one with odds
+      const hasOdds = m.odds && (m.odds.o25 || m.odds.u25);
+      const existingHasOdds = existing.odds && (existing.odds.o25 || existing.odds.u25);
+      if (!existingHasOdds && hasOdds) {
+        map.set(key, m);
+      }
     }
   });
 

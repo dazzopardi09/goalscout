@@ -4,18 +4,18 @@
 //
 // Responsibilities:
 //   1. Fetch match scores from The-Odds-API /scores
-//   2. Match scores to pending predictions by teams
-//   3. Fetch current odds for CLV (closing line value) calculation
-//   4. Call settlePrediction() and updatePreKickoffOdds() in history.js
+//   2. Pre-fetch closing odds once per sport key (not per prediction)
+//   3. Match scores to pending predictions by teams
+//   4. Call settlePrediction() in history.js
+//   5. Update pre-kickoff odds via fetchCurrentOddsForPending()
 //
-// The-Odds-API /scores returns results for completed matches.
-// We use the 'daysFrom' parameter to look back up to 3 days.
+// Team name matching uses the shared normaliser in utils/team-names.js.
 // ─────────────────────────────────────────────────────────────
-
 
 const config = require('../config');
 const { readJSONL, settlePrediction, updatePreKickoffOdds } = require('../engine/history');
 const { getOddsKey } = require('../odds/the-odds-api');
+const { teamsMatch } = require('../utils/team-names');
 
 // ── Odds API request helper ───────────────────────────────────
 
@@ -48,72 +48,6 @@ async function oddsApiRequest(path, params = {}) {
   return null;
 }
 
-// ── Team name normalisation ───────────────────────────────────
-
-function stripDiacritics(str) {
-  return (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-}
-
-function normalise(name) {
-  return stripDiacritics(name || '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]/g, ' ')
-    .replace(/\b(fc|ac|cf|sc|bk|fk|if|ik|sk|nk|as|sv|cd|club|athletic|atletico)\b/g, ' ')
-    .replace(/\butd\b/g, 'united')
-    .replace(/\bmtjylland\b/g, 'midtjylland')
-    .replace(/\bkobenhavn\b/g, 'copenhagen')
-    .replace(/\bnurnberg\b/g, 'nuremberg')
-    .replace(/\bsaint etienne\b/g, 'st etienne')
-    .replace(/\bdefensa y j\b/g, 'defensa y justicia')
-    .replace(/\bd\.?\s*riestra\b/g, 'deportivo riestra')
-    .replace(/\be\.?\s*rio cuarto\b/g, 'estudiantes rio cuarto')
-    .replace(/\bestudiantes de rio cuarto\b/g, 'estudiantes rio cuarto')
-    .replace(/\bman utd\b/g, 'manchester united')
-    .replace(/\bman city\b/g, 'manchester city')
-    .replace(/\bpsv eindhoven\b/g, 'psv')
-    .replace(/\bpec zwolle\b/g, 'zwolle')
-    .replace(/\bqpr\b/g, 'queens park rangers')
-    .replace(/\bws wanderers\b/g, 'western sydney wanderers')
-    .replace(/\bmacarthur fc\b/g, 'macarthur')
-    .replace(/\bwellington phoenix\b/g, 'wellington')
-    .replace(/\bbor\b/g, 'borussia')
-    .replace(/\bgladbach\b/g, 'monchengladbach')
-    .replace(/\bmgladbach\b/g, 'monchengladbach')
-    .replace(/\bst\b/g, 'saint')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function singleTeamMatch(a, b) {
-  const na = normalise(a);
-  const nb = normalise(b);
-
-  if (!na || !nb) return false;
-  if (na === nb) return true;
-  if (na.includes(nb) || nb.includes(na)) return true;
-
-  const ta = na.split(' ').filter(Boolean);
-  const tb = nb.split(' ').filter(Boolean);
-  const common = ta.filter(t => tb.includes(t));
-  const overlap = common.length / Math.max(ta.length, tb.length);
-
-  return common.length >= 1 && overlap >= 0.4;
-}
-
-function teamsMatch(apiHome, apiAway, predHome, predAway) {
-  const direct =
-    singleTeamMatch(apiHome, predHome) &&
-    singleTeamMatch(apiAway, predAway);
-
-  if (direct) return true;
-
-  return (
-    singleTeamMatch(apiHome, predAway) &&
-    singleTeamMatch(apiAway, predHome)
-  );
-}
-
 // ── Fetch scores and settle ───────────────────────────────────
 
 async function fetchScoresAndSettle() {
@@ -126,12 +60,14 @@ async function fetchScoresAndSettle() {
 
   console.log(`[settler] ${pending.length} pending predictions to check`);
 
+  // ── Collect unique sport keys ─────────────────────────────
   const sportKeys = new Set();
   for (const p of pending) {
     const key = getOddsKey(p.leagueSlug);
     if (key) sportKeys.add(key);
   }
 
+  // ── Fetch scores — one call per sport key ─────────────────
   const allScores = [];
 
   for (const sportKey of sportKeys) {
@@ -151,6 +87,27 @@ async function fetchScoresAndSettle() {
 
   console.log(`[settler] fetched ${allScores.length} score records from API`);
 
+  // ── Pre-fetch closing odds — one call per sport key ───────
+  // The /odds endpoint only returns upcoming/live events.
+  // Completed matches are dropped, so closingOdds from here will
+  // usually be null. The real closing price is written earlier
+  // by fetchCurrentOddsForPending() before kickoff — see history.js.
+  const allClosingOddsMap = new Map();
+
+  for (const sportKey of sportKeys) {
+    const oddsData = await oddsApiRequest(`/v4/sports/${sportKey}/odds`, {
+      regions: config.ODDS_REGIONS || 'au,uk',
+      markets: 'totals',
+      oddsFormat: 'decimal',
+    });
+    if (oddsData && Array.isArray(oddsData)) {
+      allClosingOddsMap.set(sportKey, oddsData);
+    }
+  }
+
+  console.log(`[settler] pre-fetched closing odds for ${allClosingOddsMap.size} sport keys`);
+
+  // ── Settle each pending prediction ────────────────────────
   let settled = 0;
   let skipped = 0;
   let errors = 0;
@@ -184,16 +141,13 @@ async function fetchScoresAndSettle() {
         continue;
       }
 
+      // Look up closing odds from pre-fetched map.
+      // Usually null for completed matches — history.js fallback handles this.
       let closingOdds = null;
 
-      const oddsData = await oddsApiRequest(`/v4/sports/${sportKey}/odds`, {
-        regions: config.ODDS_REGIONS || 'au,uk',
-        markets: 'totals',
-        oddsFormat: 'decimal',
-      });
-
-      if (oddsData && Array.isArray(oddsData)) {
-        const event = oddsData.find(e =>
+      const leagueOdds = allClosingOddsMap.get(sportKey);
+      if (leagueOdds && Array.isArray(leagueOdds)) {
+        const event = leagueOdds.find(e =>
           teamsMatch(e.home_team, e.away_team, p.homeTeam, p.awayTeam)
         );
 

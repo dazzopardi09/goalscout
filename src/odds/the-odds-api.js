@@ -2,40 +2,15 @@
 // ─────────────────────────────────────────────────────────────
 // Integration with The-Odds-API (the-odds-api.com)
 //
-// Region: UK only (Bet365, Pinnacle, William Hill, Betfair Exchange etc)
-// Markets: totals (Over/Under 2.5) — both sides captured per event
-//
-// ── Cache strategy ─────────────────────────────────────────
-//
-// Two-layer cache:
-//   1. In-memory: fast lookups during a single refresh cycle
-//   2. Disk (data/odds-cache.json): survives container restarts
-//
-// On startup, disk cache is loaded into memory if entries are
-// still within their TTL. A redeploy mid-cycle costs 0 extra
-// API calls as long as the data/ volume is mounted (it always is).
-//
-// Cache TTLs:
-//   Sports list:  6 hours (changes rarely)
-//   Odds per key: 3 hours (prices move slowly pre-match)
-//
-// ── Quota management ───────────────────────────────────────
-//
-// ODDS_DAILY_LIMIT caps calls per UTC day (resets at midnight).
-// Daily counter is in-memory only — resets on restart, which is
-// acceptable since a restart also resets our call pattern.
-//
-// ── In-play guard ──────────────────────────────────────────
-//
-// Events within INPLAY_BUFFER_MINS of kickoff are skipped.
-// Prevents corrupt in-game prices from being stored as
-// tip-time snapshots.
+// Team name matching uses the shared normaliser in utils/team-names.js.
+// Add new team aliases there — do not add them here.
 // ─────────────────────────────────────────────────────────────
 
 const { fetch } = require('undici');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
+const { normalise, applyAlias } = require('../utils/team-names');
 
 let currentKeyIndex = 0;
 
@@ -46,15 +21,6 @@ function isInPlay(commenceTime) {
   if (!commenceTime) return false;
   return (new Date(commenceTime) - new Date()) / 60000 < INPLAY_BUFFER_MINS;
 }
-
-// ── Known name overrides ─────────────────────────────────────
-const KNOWN_NAME_OVERRIDES = {
-  'gimnasia': 'gimnasia la plata',
-  'e. rio cuarto': 'estudiantes rio cuarto',
-  'e rio cuarto': 'estudiantes rio quarto',
-  'd. riestra': 'deportivo riestra',
-  'd riestra': 'deportivo riestra',
-};
 
 // ── Daily quota tracking ─────────────────────────────────────
 const quotaTracker = { date: null, calls: 0 };
@@ -81,24 +47,16 @@ function isQuotaExceeded() {
 }
 
 // ── Disk cache ───────────────────────────────────────────────
-// Persists the in-memory cache to data/odds-cache.json so that
-// container restarts don't burn quota re-fetching fresh data.
-
 const CACHE_FILE = path.join(config.DATA_DIR, 'odds-cache.json');
 
-const SPORTS_CACHE_TTL = 6 * 60 * 60 * 1000;  // 6 hours
-const ODDS_CACHE_TTL   = 3 * 60 * 60 * 1000;  // 3 hours
+const SPORTS_CACHE_TTL = 6 * 60 * 60 * 1000;
+const ODDS_CACHE_TTL   = 3 * 60 * 60 * 1000;
 
-// In-memory cache — loaded from disk on startup
 const cache = {
   sports: { data: null, timestamp: 0 },
-  odds: new Map(),  // cacheKey → { data, timestamp }
+  odds: new Map(),
 };
 
-/**
- * Load disk cache into memory on startup.
- * Only entries still within their TTL are kept.
- */
 function loadDiskCache() {
   try {
     if (!fs.existsSync(CACHE_FILE)) return;
@@ -125,10 +83,6 @@ function loadDiskCache() {
   }
 }
 
-/**
- * Persist current in-memory cache to disk.
- * Called after every successful API fetch.
- */
 function saveDiskCache() {
   try {
     if (!fs.existsSync(config.DATA_DIR)) {
@@ -145,10 +99,7 @@ function saveDiskCache() {
   }
 }
 
-// Load disk cache immediately on module load
 loadDiskCache();
-
-// ── Cache validity ───────────────────────────────────────────
 
 function isCacheValid(entry, ttl) {
   return entry && entry.data && (Date.now() - entry.timestamp) < ttl;
@@ -241,11 +192,6 @@ async function fetchOddsForSport(sportKey, markets, regions) {
 
 // ── Event-level odds fetch ───────────────────────────────────
 
-/**
- * Fetch odds for a single event by Odds API event ID.
- * Used by settler.js for pre-kickoff and closing snapshots.
- * Costs 1 quota credit. Results are NOT cached (point-in-time).
- */
 async function fetchEventOdds(sportKey, eventId, markets, regions) {
   if (!eventId) return null;
   console.log(`[odds-api] fetching event odds for ${eventId}...`);
@@ -273,74 +219,74 @@ async function buildBettableLeagueMap() {
 
 const SLUG_TO_ODDS_MAP = {
   // England
-  england: 'soccer_epl',
-  england2: 'soccer_efl_champ',
-  england3: 'soccer_england_league1',
-  england4: 'soccer_england_league2',
+  england:        'soccer_epl',
+  england2:       'soccer_efl_champ',
+  england3:       'soccer_england_league1',
+  england4:       'soccer_england_league2',
   'cup-england1': 'soccer_fa_cup',
 
   // Germany
-  germany: 'soccer_germany_bundesliga',
-  germany2: 'soccer_germany_bundesliga2',
-  germany3: 'soccer_germany_liga3',
+  germany:        'soccer_germany_bundesliga',
+  germany2:       'soccer_germany_bundesliga2',
+  germany3:       'soccer_germany_liga3',
   'cup-germany1': 'soccer_germany_dfb_pokal',
 
   // Italy
-  italy: 'soccer_italy_serie_a',
-  italy2: 'soccer_italy_serie_b',
-  'cup-italy1': 'soccer_italy_coppa_italia',
+  italy:          'soccer_italy_serie_a',
+  italy2:         'soccer_italy_serie_b',
+  'cup-italy1':   'soccer_italy_coppa_italia',
 
   // Spain
-  spain: 'soccer_spain_la_liga',
-  spain2: 'soccer_spain_segunda_division',
+  spain:          'soccer_spain_la_liga',
+  spain2:         'soccer_spain_segunda_division',
 
   // France
-  france: 'soccer_france_ligue_one',
-  france2: 'soccer_france_ligue_two',
-  'cup-france1': 'soccer_france_coupe_de_france',
+  france:         'soccer_france_ligue_one',
+  france2:        'soccer_france_ligue_two',
+  'cup-france1':  'soccer_france_coupe_de_france',
 
   // Netherlands / Portugal / Belgium / Austria
-  netherlands: 'soccer_netherlands_eredivisie',
-  portugal: 'soccer_portugal_primeira_liga',
-  belgium: 'soccer_belgium_first_div',
-  austria: 'soccer_austria_bundesliga',
+  netherlands:    'soccer_netherlands_eredivisie',
+  portugal:       'soccer_portugal_primeira_liga',
+  belgium:        'soccer_belgium_first_div',
+  austria:        'soccer_austria_bundesliga',
 
   // Nordics
-  denmark: 'soccer_denmark_superliga',
-  sweden: 'soccer_sweden_allsvenskan',
-  sweden2: 'soccer_sweden_superettan',
-  norway: 'soccer_norway_eliteserien',
-  finland: 'soccer_finland_veikkausliiga',
+  denmark:        'soccer_denmark_superliga',
+  sweden:         'soccer_sweden_allsvenskan',
+  sweden2:        'soccer_sweden_superettan',
+  norway:         'soccer_norway_eliteserien',
+  finland:        'soccer_finland_veikkausliiga',
 
   // Europe
-  switzerland: 'soccer_switzerland_superleague',
-  turkey: 'soccer_turkey_super_league',
-  greece: 'soccer_greece_super_league',
-  poland: 'soccer_poland_ekstraklasa',
-  scotland: 'soccer_spl',
-  russia: 'soccer_russia_premier_league',
-  ireland: 'soccer_league_of_ireland',
+  switzerland:    'soccer_switzerland_superleague',
+  turkey:         'soccer_turkey_super_league',
+  greece:         'soccer_greece_super_league',
+  poland:         'soccer_poland_ekstraklasa',
+  scotland:       'soccer_spl',
+  russia:         'soccer_russia_premier_league',
+  ireland:        'soccer_league_of_ireland',
 
   // South America
-  argentina: 'soccer_argentina_primera_division',
-  brazil: 'soccer_brazil_campeonato',
-  brazil2: 'soccer_brazil_serie_b',
-  chile: 'soccer_chile_campeonato',
-  'copa-libertadores': 'soccer_conmebol_copa_libertadores',
-  'copa-sudamericana': 'soccer_conmebol_copa_sudamericana',
+  argentina:      'soccer_argentina_primera_division',
+  brazil:         'soccer_brazil_campeonato',
+  brazil2:        'soccer_brazil_serie_b',
+  chile:          'soccer_chile_campeonato',
+  'copa-libertadores':  'soccer_conmebol_copa_libertadores',
+  'copa-sudamericana':  'soccer_conmebol_copa_sudamericana',
 
   // Asia / Oceania / Americas
-  australia: 'soccer_australia_aleague',
-  japan: 'soccer_japan_j_league',
-  southkorea: 'soccer_korea_kleague1',
-  china: 'soccer_china_superleague',
-  saudiarabia: 'soccer_saudi_arabia_pro_league',
-  mexico: 'soccer_mexico_ligamx',
-  usa: 'soccer_usa_mls',
+  australia:      'soccer_australia_aleague',
+  japan:          'soccer_japan_j_league',
+  southkorea:     'soccer_korea_kleague1',
+  china:          'soccer_china_superleague',
+  saudiarabia:    'soccer_saudi_arabia_pro_league',
+  mexico:         'soccer_mexico_ligamx',
+  usa:            'soccer_usa_mls',
 
   // UEFA
-  cleague: 'soccer_uefa_champs_league',
-  uefa: 'soccer_uefa_europa_league',
+  cleague:        'soccer_uefa_champs_league',
+  uefa:           'soccer_uefa_europa_league',
   uefaconference: 'soccer_uefa_europa_conference_league',
 };
 
@@ -352,31 +298,6 @@ function isBettableLeague(slug, activeSportsMap) {
 
 function getOddsKey(slug) {
   return SLUG_TO_ODDS_MAP[slug] || null;
-}
-
-// ── Name normalisation ───────────────────────────────────────
-
-function normalise(name) {
-  return (name || '')
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/\butd\b/g, 'united')
-    .replace(/\batl\b/g, 'atletico')
-    .replace(/\bath\b/g, 'athletic')
-    .replace(/\bborussia\b/g, 'borussia')
-    .replace(/\bint\b/g, 'inter')
-    .replace(/\bws\b/g, 'western sydney')
-    .replace(/\bfc\b/g, '').replace(/\bsc\b/g, '').replace(/\bsv\b/g, '')
-    .replace(/\bcf\b/g, '').replace(/\bac\b/g, '').replace(/\bas\b/g, '')
-    .replace(/\bsk\b/g, '').replace(/\bfk\b/g, '').replace(/\bif\b/g, '')
-    .replace(/\bbk\b/g, '')
-    .replace(/[^a-z0-9]/g, '')
-    .trim();
-}
-
-function applyOverride(name) {
-  const lower = (name || '').toLowerCase().trim();
-  return KNOWN_NAME_OVERRIDES[lower] || name;
 }
 
 // ── Main shortlist odds fetch ────────────────────────────────
@@ -416,6 +337,7 @@ async function fetchOddsForShortlist(shortlistedMatches) {
           continue;
         }
 
+        // Use shared normaliser so key-building matches key-lookup
         const homeNorm = normalise(event.home_team);
         const awayNorm = normalise(event.away_team);
         const eventKey = `${homeNorm}__${awayNorm}`;
@@ -423,9 +345,9 @@ async function fetchOddsForShortlist(shortlistedMatches) {
         eventNamesInLeague.push(`${event.home_team} vs ${event.away_team}`);
 
         const odds = {
-          eventId: event.id,
-          homeTeam: event.home_team,
-          awayTeam: event.away_team,
+          eventId:      event.id,
+          homeTeam:     event.home_team,
+          awayTeam:     event.away_team,
           commenceTime: event.commence_time,
           o25: null,
           u25: null,
@@ -447,6 +369,16 @@ async function fetchOddsForShortlist(shortlistedMatches) {
           }
         }
 
+        if (!bestOver && !bestUnder) {
+          const allLines = (event.bookmakers || []).flatMap(bm =>
+            (bm.markets || []).filter(m => m.key === 'totals').flatMap(m =>
+              (m.outcomes || []).map(o => `${o.name} ${o.point}`)
+            )
+          );
+          const unique = [...new Set(allLines)].join(', ');
+          console.log(`[odds-api] no 2.5 line for ${event.home_team} vs ${event.away_team} — available: ${unique || 'none'}`);
+        }
+
         odds.o25 = bestOver;
         odds.u25 = bestUnder;
         allOddsData.set(eventKey, odds);
@@ -459,13 +391,13 @@ async function fetchOddsForShortlist(shortlistedMatches) {
     }
   }
 
-  // Matching diagnostics — only for pre-kickoff matches
+  // Matching diagnostics for unmatched pre-kickoff matches
   for (const m of shortlistedMatches) {
     const sportKey = m.oddsKey || getOddsKey(m.leagueSlug);
     if (!sportKey) continue;
 
-    const homeNorm = normalise(applyOverride(m.homeTeam));
-    const awayNorm = normalise(applyOverride(m.awayTeam));
+    const homeNorm = normalise(applyAlias(m.homeTeam));
+    const awayNorm = normalise(applyAlias(m.awayTeam));
 
     let willMatch = allOddsData.has(`${homeNorm}__${awayNorm}`);
     if (!willMatch) {
@@ -499,8 +431,9 @@ async function fetchOddsForShortlist(shortlistedMatches) {
 // ── Match → odds lookup ──────────────────────────────────────
 
 function matchOddsToMatch(match, oddsMap) {
-  const homeNorm = normalise(applyOverride(match.homeTeam));
-  const awayNorm = normalise(applyOverride(match.awayTeam));
+  // applyAlias before normalise so abbreviations resolve correctly
+  const homeNorm = normalise(applyAlias(match.homeTeam));
+  const awayNorm = normalise(applyAlias(match.awayTeam));
 
   const exactKey = `${homeNorm}__${awayNorm}`;
   if (oddsMap.has(exactKey)) return oddsMap.get(exactKey);

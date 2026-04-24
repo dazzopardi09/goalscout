@@ -4,7 +4,7 @@
 //
 // Workflow:
 //   1. Query The-Odds-API for active soccer competitions (UK region)
-//   2. Scrape SoccerSTATS for matches in bettable leagues
+//   2. Scrape SoccerSTATS for matches in bettable leagues (today only)
 //   3. Score each match in both directions (O2.5 and U2.5)
 //      → direction with higher score wins → one call per match
 //   4. Fetch Over AND Under odds for shortlisted matches
@@ -25,7 +25,7 @@ const {
   matchOddsToMatch,
   SLUG_TO_ODDS_MAP,
 } = require('../odds/the-odds-api');
-const { writeJSON, writeMatchDetail } = require('../utils/storage');
+const { writeJSON, readJSON, writeMatchDetail } = require('../utils/storage');
 const config = require('../config');
 const { applyCalibration } = require('../engine/calibration');
 
@@ -80,34 +80,17 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       }
     }
 
-    // ── Step 2: Scrape SoccerSTATS ────────────────────────
-    refreshState.progress = 'Scraping matches page...';
+    // ── Step 2: Scrape SoccerSTATS today only ─────────────
+    refreshState.progress = 'Scraping today\'s matches...';
     const { matches: todayMatches, leagueSlugs: todaySlugs } = await scrapeMatchesPage(1);
     console.log('[debug] leagues on SoccerSTATS today:', todaySlugs.length, todaySlugs);
 
-    refreshState.progress = 'Scraping tomorrow...';
-    let tomorrowMatches = [];
-    try {
-      const tmrw = await scrapeMatchesPage(2);
-      tomorrowMatches = tmrw.matches;
-    } catch (e) {
-      console.warn('[orchestrator] tomorrow scrape failed:', e.message);
-    }
-
-    const allScraped = [...todayMatches];
     const deduped = new Map();
-    for (const m of allScraped) {
+    for (const m of todayMatches) {
       if (!deduped.has(m.id)) deduped.set(m.id, m);
     }
     let allMatches = Array.from(deduped.values());
     console.log(`[orchestrator] total scraped matches: ${allMatches.length}`);
-
-    // DEBUG — matches per league
-    const byLeague = {};
-    for (const m of allMatches) {
-      byLeague[m.leagueSlug] = (byLeague[m.leagueSlug] || 0) + 1;
-    }
-    // console.log('[debug] matches by league:', byLeague);
 
     // ── Step 3: Tag bettable matches ──────────────────────
     if (bettableSlugs.length > 0) {
@@ -152,8 +135,8 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
 
     console.log(`[orchestrator] shortlisted before prob filter: ${shortlisted.length}`);
 
-    for (const m of [...scored, ...shortlisted]) {
-      m.day = todayMatches.some(t => t.id === m.id) ? 'Today' : 'Tomorrow';
+    for (const m of scored) {
+      m.day = 'Today';
     }
 
     // ── Step 6: Fetch odds (Over AND Under) ───────────────
@@ -182,7 +165,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       }
     }
 
-        // ── Step 7: Probability engine + parallel current/calibrated models ────
+    // ── Step 7: Probability engine + parallel current/calibrated models ────
     refreshState.progress = 'Calculating probabilities...';
     const minProb = config.THRESHOLDS?.MIN_PROB || 0;
 
@@ -235,7 +218,11 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
         const prob = m.direction === 'u25'
           ? m.analysis?.u25?.probability
           : m.analysis?.o25?.probability;
-        return prob != null && prob >= minProb;
+        if (prob == null || prob < minProb) return false;
+        // Require odds for the recommended direction.
+        // Without a price, edge is incalculable and the bet cannot be placed.
+        const relevantOdds = m.direction === 'u25' ? m.odds?.u25 : m.odds?.o25;
+        return relevantOdds?.price != null;
       });
 
     // calibrated model = independent direction + shortlist from calibrated probabilities
@@ -251,6 +238,10 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
         const dirProb = direction === 'o25' ? o25 : u25;
 
         if (dirProb < minProb) return null;
+
+        // Require odds for the calibrated direction too.
+        const relevantOdds = direction === 'u25' ? m.odds?.u25 : m.odds?.o25;
+        if (!relevantOdds?.price) return null;
 
         return {
           ...m,
@@ -297,7 +288,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     console.log(`[orchestrator] current shortlist: ${currentShortlisted.length}, calibrated shortlist: ${calibratedShortlisted.length}, floor ${minProb * 100}%`);
 
     // ── Step 8: Match details for top shortlisted ─────────
-        if (scrapeDetails && shortlistForDetails.length > 0) {
+    if (scrapeDetails && shortlistForDetails.length > 0) {
       const toDetail = shortlistForDetails.slice(0, 20);
       refreshState.progress = `Fetching details for ${toDetail.length} matches...`;
       for (const match of toDetail) {
@@ -312,7 +303,43 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       }
     }
 
-    // ── Step 9: Write to disk ─────────────────────────────
+    // ── Step 9: Preserve in-progress matches from previous shortlist ──
+    // If a manual refresh fires while a match is in play, SoccerSTATS may
+    // no longer list it — so it would vanish from the new shortlist.
+    // We carry forward any match from the previous shortlist whose kickoff
+    // was within the last 3 hours (still plausibly in play).
+    // Requires commenceTime (set when odds were found). Matches without
+    // odds rely on SoccerSTATS still listing them.
+    try {
+      const prevShortlist = readJSON(config.SHORTLIST_FILE) || {};
+      const nowMs = Date.now();
+      const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+
+      function isInProgress(m) {
+        if (!m.commenceTime) return false;
+        const ko = new Date(m.commenceTime).getTime();
+        return ko < nowMs && (nowMs - ko) < THREE_HOURS_MS;
+      }
+
+      const newCurrentIds = new Set(currentShortlisted.map(m => m.id));
+      const carried = (prevShortlist.current || [])
+        .filter(m => isInProgress(m) && !newCurrentIds.has(m.id));
+      if (carried.length > 0) {
+        console.log(`[orchestrator] carrying ${carried.length} in-progress match(es) from previous shortlist`);
+        currentShortlisted.push(...carried);
+      }
+
+      const newCalibratedIds = new Set(calibratedShortlisted.map(m => m.id));
+      const carriedCalibrated = (prevShortlist.calibrated || [])
+        .filter(m => isInProgress(m) && !newCalibratedIds.has(m.id));
+      if (carriedCalibrated.length > 0) {
+        calibratedShortlisted.push(...carriedCalibrated);
+      }
+    } catch (e) {
+      console.warn('[orchestrator] in-progress carry-forward failed:', e.message);
+    }
+
+    // ── Step 10: Write to disk ─────────────────────────────
     refreshState.progress = 'Writing data...';
     writeJSON(config.DISCOVERED_FILE, scored);
     writeJSON(config.SHORTLIST_FILE, {
