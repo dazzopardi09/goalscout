@@ -1,260 +1,174 @@
 # GoalScout — Project Status & Continuation Guide
 
-## What This Is
-A local Unraid Docker app that identifies football matches worth betting on for Over 2.5 or Under 2.5 goals markets, using a probability pricing engine to find edge against bookmaker prices.
+## Current State — 24 Apr 2026
 
-## Current State (v3 — April 2026)
-- **Working and deployed** on Unraid at port 3030
-- **Bettable-first flow**: queries The-Odds-API for leagues with active betting markets, scrapes/scores only those leagues
-- **Data source**: SoccerSTATS.com (paid membership, uses FlareSolverr for Cloudflare bypass)
-- **Odds**: UK region bookmakers via The-Odds-API (Bet365, Pinnacle, William Hill, Betfair Exchange etc)
-- **Markets**: Over 2.5 Goals and Under 2.5 Goals — one directional call per match, never both
-- **Auto-refresh**: Every 6 hours via cron
-- **Settlement**: Every 2 hours via cron
-- **Performance tab**: O2.5 and U2.5 tabs independently tracking hit rate, Brier score, mean edge, CLV
-- **Current output**: ~960 matches scraped → ~121 bettable → ~9 shortlisted
+GoalScout is a local Unraid Docker app for identifying pre-match O2.5 and U2.5 football betting opportunities.
 
-- **Dual-model system live**:
-  - Current model (scoring-based)
-  - Calibrated model (probability-based, A-League trained)
+- Running on Unraid at port `3030`
+- SoccerSTATS paid account active
+- FlareSolverr at `192.168.178.5:8191`
+- The Odds API paid key active (1 key in docker-compose.yml, daily limit 600)
+- Football-Data.org token stored in docker-compose.yml (for future results use)
+- Live refresh: **today-only**
+- League-page scraping: intersection of SoccerSTATS slugs + active Odds API soccer competitions
+- O2.5 and U2.5 markets live
+- Current and Calibrated model streams live with independent performance tracking
+- Settlement working via `getOddsKey()` (stale `mapLeagueSlugToSportKey` references removed)
+- Prediction deduplication: one record per `fixtureId + method + direction`
+- Existing predictions.jsonl deduped: 174 → 120 rows
+- Shortlist sorted by kickoff ascending by default
+- Away stats column offset fixed: all away fields now read correct columns
 
-- **Shortlist now split by model**
-  - Both models run independently on same match pool
-  - UI supports filtering by model
-  - Overlap tracking implemented
+---
 
-- **Performance tracking split by model**
-  - Independent stats for Current vs Calibrated
-  - Shared overlap summary
+## Recently Completed
 
-## Scope — What This App Does and Doesn't Do
+### Away stats column offset fix (Apr 2026)
+The SoccerSTATS matches.asp scraper was reading all away-side stats one column early. Cell [13] is the text "away" (scope indicator), not a stat. All eight away fields (`gp`, `ppg`, `avgTG`, `winPct`, `csPct`, `ftsPct`, `btsPct`, `o25pct`) were offset by -1, meaning every prediction logged before this fix has corrupted away stats. A 23-cell structural guard was also added.
 
-### In scope (current)
-- O2.5 and U2.5 goals markets only
-- One directional call per match — either Over or Under, never both
-- Pre-match only (Australian regulatory context)
-- UK bookmaker prices as the reference market
-- Three odds snapshots per match: tip-time, pre-kickoff (30 mins before), closing
+Files: `src/scrapers/match-discovery.js`
 
-### Deliberately out of scope (for now)
-- BTTS — removed as a market. Will be added as a separate module later once xG layer exists and O2.5/U2.5 model is calibrated
-- In-play betting
-- Asian handicap, correct score, other markets
-- ML models — baseline must be validated first
-- Automated bet placement — Phase 3
+### Shared team-name normaliser (Apr 2026)
+`src/utils/team-names.js` created as single source of truth for team name matching. `normalise()`, `applyAlias()`, `singleTeamMatch()`, and `teamsMatch()` are now shared across `the-odds-api.js` and `settler.js`. Aliases for Argentina, Australia, Netherlands, Germany, France, Denmark live here.
 
-### Future modules (not yet built)
-BTTS, Draw No Bet, Team Totals, First Half O/U — all will be built as add-on modules on top of the same core probability engine once the baseline is validated.
+### Odds API sports-list cleanup
+`/v4/sports` filtered to `soccer_` active competitions only. Count is now ~53 active soccer competitions.
+
+### Expanded SLUG_TO_ODDS_MAP
+Added/corrected: `england2–4`, `germany3`, `sweden2`, `brazil`, `brazil2`, `chile`, `china`, `saudiarabia`, `ireland`, `usa`. Removed incorrect `usa6 → MLS` mapping (`usa6` is NWSL on SoccerSTATS).
+
+### Today-only refresh
+Live shortlist now scrapes today's SoccerSTATS matches only. League-page fetching scoped to leagues present in current run AND mapped to an active Odds API soccer competition.
+
+### Settler repaired
+Replaced all `mapLeagueSlugToSportKey` references with `getOddsKey()`. Settlement cron successfully settled 50 predictions in one run after fix.
+
+### Prediction deduplication fixed
+Forward dedup rule: `fixtureId + method + direction`. One-off cleanup: 174 → 120 rows. Backup at `data/history/predictions.backup-before-dedupe.jsonl`.
+
+### CLAUDE.md added
+Repo-root conventions file: always provide full files, deploy sequence, run commands in temp Docker containers.
+
+---
 
 ## Architecture
+
 ```
-SoccerSTATS.com ──→ FlareSolverr ──→ GoalScout scraper
-The-Odds-API (UK region) ──→ League filtering + odds overlay
-                        ↓
-              Shortlist Engine — directional scoring
-              (O2.5 signals vs U2.5 signals → one direction per match)
-                        ↓
-              Probability Engine
-              (P(O2.5), P(U2.5)=1-P(O2.5), fair odds, edge)
-                        ↓
-              Three-snapshot odds capture
-              (tip-time → pre-kickoff 30min → closing)
-                        ↓
-              Express API + HTML Dashboard (Shortlist + Performance tabs)
-                        ↓
-              Local JSON + JSONL history (data/history/)
+SoccerSTATS today matches
+  ↓
+League slugs found in current scrape
+  ↓
+Intersect with mapped active Odds API soccer competitions
+  ↓
+Fetch SoccerSTATS league stats only for eligible leagues
+  ↓
+Score eligible matches (O2.5 vs U2.5, directional)
+  ↓
+Build Current + Calibrated shortlists independently
+  ↓
+Fetch O/U 2.5 odds for shortlisted competitions
+  ↓
+Log predictions (one per fixtureId + method + direction)
+  ↓
+Settle completed predictions via Odds API /scores
+  ↓
+Performance tab (per method, per market)
 ```
 
-## Model Architecture (v3)
+---
 
-GoalScout now runs two independent models:
+## Model Architecture
 
-### Current Model
-- Direction determined by scoring system
-- Grade-based filtering (A+/A/B)
-- Baseline production model
+### Current model
+Direction from scoring system (O2.5 vs U2.5 signals). Grade A+/A/B from winning score. Only shortlisted if: direction won, score ≥ MIN_WINNING_SCORE, probability ≥ MIN_PROB, and odds exist for the recommended direction.
 
-### Calibrated Model
-- Uses probability calibration from A-League historical data
-- Selects direction based on calibrated probabilities
-- Uses probability → grade mapping (not scoring system)
-- Runs on all leagues (not limited to A-League)
+### Calibrated model
+Direction from calibrated probability (from `calibration.js`). Grade from probability thresholds. Same odds requirement. Runs independently — does not depend on current shortlist.
 
-### Key Principle
-Both models:
-- operate on identical match inputs
-- produce independent outputs
-- are evaluated separately
+Both models operate on identical match inputs and are logged/evaluated separately.
 
-This enables:
-- controlled validation of calibration impact
-- removal of bias from shortlist dependency
+---
+
+## Known Issues
+
+### Priority 1 — Results source reliability
+The Odds API `/scores` is still the settler's primary source. It previously returned at least one wrong score (Bielefeld 2-0, actual 1-1). All historical predictions settled via `/scores` may have corrupted outcomes. Football-Data.org token is in docker-compose.yml but not yet wired into `settler.js`. Fix this before trusting calibration or ROI.
+
+### Priority 2 — Current and Calibrated returning identical shortlists
+After the away stats fix, both models are returning the same 10 matches. This may be a coincidence given today's fixture set, or it may indicate that the calibration map (`data/calibration/league-calibration.json`) is empty/missing, making `applyCalibration()` a no-op and leaving calibrated probabilities identical to raw ones. Worth checking the calibration data file.
+
+### Priority 3 — Performance view method filtering
+Verify that the Current tab shows only current-method rows and Calibrated shows only calibrated-method rows. Overlap analysis should be separate.
+
+### Priority 4 — Calibration chart not wired
+`perfContent` has calibration chart HTML but `renderPerformance()` never populates `calibBars`. Needs wiring to method-specific stats.
+
+### Priority 5 — Closing odds rarely captured
+The Odds API `/odds` endpoint drops completed events, so `closingOdds` from the settler is almost always null. `updatePreKickoffOdds()` stores pre-KO price as `closingOdds` as a fallback — this is working but CLV accuracy is limited to pre-KO vs tip-time comparison rather than true closing line.
+
+---
 
 ## Tech Stack
+
 - Node.js 20 + Express
 - Cheerio (HTML parsing)
-- FlareSolverr (Cloudflare bypass, Unraid container at 192.168.178.5:8191)
-- The-Odds-API (4 free keys, 500 req/month each, UK region only)
+- FlareSolverr (`192.168.178.5:8191`)
+- The Odds API (paid key, daily limit 600, UK+AU region)
+- Football-Data.org (free tier, token in docker-compose.yml)
 - Docker on Unraid, port 3030
+- Local JSON/JSONL storage
 
-## Key Environment Variables (in docker-compose.yml)
-- `FLARESOLVERR_URL=http://192.168.178.5:8191/v1`
-- `DISPLAY_TIMEZONE=Australia/Melbourne`
-- `ODDS_API_KEYS=<4 comma-separated keys>`
-- `ODDS_REGIONS=uk` — UK only. Gives Bet365, Pinnacle, William Hill, Betfair Exchange, Paddy Power etc. AU region dropped to save quota.
-- `ODDS_BOOKMAKERS=` — empty, no allowlist. Best price wins across all UK books.
-- `ODDS_DAILY_LIMIT=40` — quota guard, resets UTC midnight
-- `SOCCERSTATS_COOKIE=<session cookies>`
+---
 
-## Why UK Region Only
-- AU region doesn't offer O2.5 totals for EPL — our biggest league gap
-- AU region doesn't offer BTTS for soccer at all
-- UK region gives Pinnacle (sharpest book, best reference for true probability) and Bet365
-- Dropping AU halves quota usage per call
-- For model calibration, price accuracy matters more than jurisdiction
+## Key Source Files
 
-## Directional Call Logic
-Each shortlisted match gets scored in two directions independently:
-
-**O2.5 signals** (high-scoring match indicators):
-- High home/away O2.5% → positive
-- High combined average TG → positive
-- High league O2.5% → positive
-- PPG mismatch (dominant vs weak) → positive
-- High CS% or FTS% → negative (undermines O2.5)
-
-**U2.5 signals** (low-scoring match indicators):
-- High home/away CS% → positive
-- High home/away FTS% → positive
-- Low combined TG → positive
-- Low O2.5% for both teams → positive
-- Low-scoring league → positive
-- High O2.5% for either team → negative (undermines U2.5)
-
-**Direction decision**: whichever score is higher wins. Ties go to O2.5.
-A match only appears on the shortlist if the winning direction score meets MIN_SCORE.
-The same match cannot appear as both O2.5 and U2.5.
-
-## Three-Snapshot Odds Capture
-Each shortlisted match captures odds at three points in time:
-
-| Snapshot | When | How | Purpose |
-|---|---|---|---|
-| `tip_time` | At shortlist (6h refresh) | Batch league fetch | Baseline price, what you'd bet at immediately |
-| `pre_kickoff` | 25-35 mins before kickoff | Event-level fetch by settler | Post-lineup price, best actionable pre-match price |
-| `closing` | As close to kickoff as possible | Event-level fetch by settler | CLV reference |
-
-Price movement between tip_time and pre_kickoff is itself a signal:
-- Odds shorten (O2.5 price drops) → market agrees, lineup confirmed the model's view
-- Odds drift out (O2.5 price rises) → something changed (likely lineup news), model was early
-- No movement → market hasn't reacted, or there's nothing to react to
-
-The Odds API event ID is stored at shortlist time so the settler can use the event-level endpoint for efficient pre-kickoff and closing captures.
-
-## Prediction Record Structure
-One record per match per direction. Market is `over_2.5` or `under_2.5`.
-
-```json
-{
-  "fixtureId": "germany_union-berlin_wolfsburg",
-  "predictionDate": "2026-04-19",
-  "predictionTimestamp": "2026-04-19T08:00:00.000Z",
-  "modelVersion": "baseline-v1",
-  "league": "Germany - Bundesliga",
-  "leagueSlug": "germany",
-  "homeTeam": "Union Berlin",
-  "awayTeam": "Wolfsburg",
-  "commenceTime": "2026-04-19T13:30:00Z",
-  "eventId": "abc123def456",
-  "market": "over_2.5",
-  "selection": "over",
-  "direction": "o25",
-  "modelProbability": 0.63,
-  "fairOdds": 1.59,
-  "marketOdds": 1.83,
-  "bookmaker": "Pinnacle",
-  "bookmakerKey": "pinnacle",
-  "oddsSnapshotAt": "2026-04-19T08:00:00.000Z",
-  "edge": 15.1,
-  "inputs": { ... }
-}
+```
+src/
+├── index.js                    Express server + cron (refresh 6h, settle 3h, pre-KO 30m)
+├── config.js                   All config — thresholds, paths, env vars
+├── api/routes.js               REST API endpoints
+├── engine/
+│   ├── shortlist.js            Directional scoring — O2.5 vs U2.5, ties excluded
+│   ├── probability.js          P(O2.5), margin removal, edge vs true market prob
+│   ├── calibration.js          applyCalibration() via league-calibration.json
+│   ├── history.js              Prediction logging, dedupe, performance stats
+│   └── settler.js              Score fetching, settlement, pre-KO odds
+├── odds/the-odds-api.js        Odds API — SLUG_TO_ODDS_MAP, sports list, odds fetch
+├── scrapers/
+│   ├── orchestrator.js         Main refresh — dual model, bettable-first, today-only
+│   ├── match-discovery.js      SoccerSTATS parser — away offset fixed Apr 2026
+│   └── league-discovery.js     League slug discovery from leagues.asp
+└── utils/
+    ├── team-names.js           Shared normaliser + alias map (single source of truth)
+    ├── fetcher.js              FlareSolverr + direct fallback HTTP client
+    └── storage.js              JSON file read/write
 ```
 
-Closing odds file stores all three snapshot types:
-```json
-{ "fixtureId": "...", "market": "over_2.5", "snapshotType": "tip_time", "decimalOdds": 1.85, ... }
-{ "fixtureId": "...", "market": "over_2.5", "snapshotType": "pre_kickoff", "decimalOdds": 1.78, ... }
-{ "fixtureId": "...", "market": "over_2.5", "snapshotType": "closing", "decimalOdds": 1.75, ... }
+---
+
+## Data Files
+
+```
+data/
+├── shortlist.json              { current: [...], calibrated: [...], comparison: {} }
+├── discovered-matches.json     All scored matches this cycle
+├── meta.json                   Refresh metadata
+├── odds-cache.json             Sports + odds cache (sports TTL 6h, odds TTL 3h)
+├── match-details/              Per-match detail JSON files
+├── calibration/
+│   └── league-calibration.json Calibration map (may be empty — check if calibrated model diverges)
+└── history/
+    ├── predictions.jsonl       Append-only, deduped by fixtureId + method + direction
+    ├── predictions.backup-before-dedupe.jsonl
+    ├── results.jsonl           Settled results
+    └── closing-odds.jsonl      Odds snapshots
 ```
 
-## Performance Tracking
-Two independent market tabs in the Performance panel:
+---
 
-**Over 2.5 tab** tracks:
-- Hit rate (did the match have 3+ goals?)
-- Mean model probability vs actual frequency (calibration)
-- Brier score
-- Mean edge at tip-time
-- Mean CLV (tip-time vs closing)
-- Price movement (tip-time vs pre-kickoff drift)
+## Deploy Commands
 
-**Under 2.5 tab** tracks the same metrics for the Under direction.
-
-This allows independent calibration of each direction. Historically, Under models and Over models have different calibration needs — Over is more dependent on form and TG, Under is more dependent on defensive structure and CS%.
-
-## File Structure
-```
-goalscout/
-├── Dockerfile
-├── docker-compose.yml
-├── package.json
-├── public/index.html              # Dashboard — Shortlist + Performance (O2.5 + U2.5 tabs)
-├── src/
-│   ├── index.js                   # Express server + cron
-│   ├── config.js                  # All config — ODDS_REGIONS, ODDS_DAILY_LIMIT etc
-│   ├── api/routes.js              # REST API endpoints
-│   ├── engine/
-│   │   ├── shortlist.js           # Directional scoring — O2.5 vs U2.5, one per match
-│   │   ├── probability.js         # P(O2.5), P(U2.5)=1-P(O2.5), fair odds, edge
-│   │   ├── history.js             # Prediction logging + performance stats (per direction)
-│   │   └── settler.js             # Results + three-snapshot odds capture
-│   ├── odds/the-odds-api.js       # Odds API — captures Over AND Under prices + event ID
-│   ├── scrapers/
-│   │   ├── orchestrator.js        # Main refresh — attaches direction + correct odds per match
-│   │   ├── match-discovery.js     # SoccerSTATS HTML parser
-│   │   └── league-discovery.js    # League slug discovery
-│   └── utils/
-│       ├── fetcher.js             # HTTP client (FlareSolverr + fallback)
-│       └── storage.js             # JSON file read/write
-└── data/
-    ├── discovered-matches.json
-    ├── shortlist.json
-    ├── meta.json
-    ├── match-details/
-    └── history/
-        ├── predictions.jsonl      # One record per match, market = over_2.5 or under_2.5
-        ├── results.jsonl          # Settled results
-        └── closing-odds.jsonl     # All three snapshots: tip_time, pre_kickoff, closing
-```
-
-## API Endpoints
-```
-GET  /api/status       → refresh state + meta
-GET  /api/shortlist    → shortlisted matches with direction + probabilities
-GET  /api/matches      → all discovered matches
-GET  /api/leagues      → all discovered leagues
-GET  /api/match/:id    → match detail
-GET  /api/stats        → performance stats (O2.5 + U2.5 independently)
-GET  /api/predictions  → raw prediction history (last 100)
-POST /api/refresh      → trigger manual refresh
-POST /api/settle       → trigger manual settlement + pre-kickoff odds capture
-```
-
-## How to Deploy Changes
-
-> ⚠️ Docker image naming trap: compose builds `goalscout-goalscout`, not `goalscout`.
-> Always use `docker compose up --build`. Never `docker build` separately.
-
+Standard deploy:
 ```bash
 cd /mnt/user/appdata/goalscout
 docker compose down
@@ -264,80 +178,62 @@ docker compose up --build -d
 docker logs -f goalscout
 ```
 
-## Git Workflow
+Never run `docker build` separately — Compose builds `goalscout-goalscout`. A standalone build creates a stale image that Compose silently ignores.
+
+---
+
+## Useful Checks
+
 ```bash
-cd /mnt/user/appdata/goalscout
-git add -A
-git commit -m "description"
-git push
+# Settlement counts
+grep -c '"status":"settled_won"' data/history/predictions.jsonl
+grep -c '"status":"settled_lost"' data/history/predictions.jsonl
+grep -c '"status":"pending"' data/history/predictions.jsonl
+
+# Check calibration data file exists and has content
+cat data/calibration/league-calibration.json 2>/dev/null || echo "MISSING"
+
+# Syntax checks
+node -c src/engine/settler.js
+node -c src/engine/history.js
+node -c src/odds/the-odds-api.js
+node -c src/scrapers/orchestrator.js
+node -c src/scrapers/match-discovery.js
 ```
 
-To continue in a new session: "I'm continuing the GoalScout project. Repo is at https://github.com/dazzopardi09/goalscout — PROJECT-STATUS.md has full context."
+---
 
-## SoccerSTATS Cookie Refresh
-1. Log into soccerstats.com in browser
-2. DevTools console → `document.cookie`
-3. Update `SOCCERSTATS_COOKIE` in docker-compose.yml
-4. `docker compose down && docker compose up -d`
+## API Endpoints
 
-## Known Issues / Next Session Work
+```
+GET  /api/status       → refresh state + meta
+GET  /api/shortlist    → { current: [...], calibrated: [...], comparison: {} }
+GET  /api/matches      → all scored matches this cycle
+GET  /api/leagues      → discovered leagues
+GET  /api/match/:id    → match detail
+GET  /api/stats        → performance stats (per method, per market)
+GET  /api/predictions  → raw prediction history (last 100)
+POST /api/refresh      → trigger manual refresh
+POST /api/settle       → trigger manual settlement + pre-kickoff odds
+POST /api/pre-kickoff  → fetch current odds for pending predictions
+```
 
-**Priority 1 — Results source fix**
-The-Odds-API `/scores` endpoint is unreliable (returned 2-0 for Bielefeld vs Nurnberg, actual was 1-1). Corrupts Brier score and hit rate. Switch settler to Football-Data.org or API-Football for match results. This must be fixed before calibration data is meaningful.
-
-**Priority 2 — Full scope change implementation (next session)**
-The following changes are planned and documented but not yet built:
-
-1. **`shortlist.js`** — Add U2.5 scoring flags, directional call logic, `direction` field per match
-2. **`the-odds-api.js`** — Capture both Over and Under prices, store event ID, switch to UK region only
-3. **`probability.js`** — Add U2.5 fair odds and edge (P(U2.5) = 1 - P(O2.5))
-4. **`history.js`** — Log `over_2.5` or `under_2.5` per match direction, drop BTTS
-5. **`settler.js`** — Three-snapshot capture (tip_time already done, add pre_kickoff + closing), use event ID for efficient event-level fetches
-6. **`orchestrator.js`** — Pass direction through, attach correct odds (Over or Under) per match
-7. **`docker-compose.yml`** — `ODDS_REGIONS=uk`, remove `ODDS_BOOKMAKERS`
-8. **`public/index.html`** — Replace BTTS column with U2.5 stats (CS%/FTS%), show direction badge per row, rename Performance tabs to O2.5 and U2.5
-
-**Priority 3 — Tooltip hover fix**
-Add `position:relative` to `.table-shell` and `z-index:9999` on tooltip. Small CSS-only fix.
-
-- ⚠️ Odds caching inefficiency — duplicate calls still occurring when models overlap
-- ⚠️ Calibration chart not yet wired to method-specific stats
-- ⚠️ Historical data includes legacy BTTS contamination
-- ⚠️ UI filter edge cases (model + grade interaction)
-
-## Recently Completed (April 2026)
-- ✅ Bookmaker region config — env-driven, no hardcodes
-- ✅ Bookmaker allowlist with correct API key names
-- ✅ Daily quota guard (ODDS_DAILY_LIMIT)
-- ✅ In-play guard — skips events within 15 mins of kickoff
-- ✅ Odds snapshot integrity — bookmakerKey + oddsSnapshotAt in predictions
-- ✅ Prediction dedup — allows one odds-update write if first write had null odds
-- ✅ Matching diagnostics — logs actual API names when fuzzy match fails
-- ✅ KNOWN_NAME_OVERRIDES for Argentina teams
-- ✅ Performance tab with O2.5 / BTTS market tabs (BTTS tab will become U2.5)
-- ✅ Settlement cron + manual settle button
-- ✅ Prediction deduplication by fixtureId+market
-- ✅ estimateKickoffUTC timezone fix
-- ✅ Docker deploy trap documented
+---
 
 ## Strategic Direction
-GoalScout is being built as a **probability and pricing engine**, not a tip finder.
 
-The goal is:
-1. Estimate true match probabilities better than the market
-2. Calibrate those probabilities properly (needs 200+ settled predictions)
-3. Compare against bookmaker prices to find edge
-4. Track CLV — not just win rate
-5. Only add complexity (xG, lineups, ML) after the baseline is validated
+1. Clean O2.5/U2.5 baseline
+2. Reliable settlement (fix results source)
+3. Calibration data collection (200+ settled needed)
+4. Then: xG, more markets, Betfair Exchange
 
-**Roadmap:**
-- Phase 1 (now): Clean O2.5/U2.5 model, accurate data pipeline, calibration data collection
-- Phase 2: xG from FBref, calibration pass, improved probability weights
-- Phase 3: BTTS as add-on module, more markets
-- Phase 4: Betfair Exchange integration, pre-match automation
+Do not add more markets until O2.5/U2.5 baseline is trustworthy.
 
-## User Details
-- Location: Melbourne, Australia (AEST/AEDT)
-- Bookmakers: Bet365 (UK feed), open to others
-- Betfair account created, developer app "goalscout" registered
-- SoccerSTATS paid membership active
+---
+
+## Continuation Prompt
+
+```
+I'm continuing the GoalScout project. Repo is at https://github.com/dazzopardi09/goalscout
+PROJECT-STATUS.md in the repo has full context.
+```
