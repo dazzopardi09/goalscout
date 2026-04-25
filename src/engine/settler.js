@@ -373,7 +373,8 @@ async function fetchCurrentOddsForPending() {
     if (p.preKickoffOdds != null) return false;
     if (!p.commenceTime) return false;
     const ko = new Date(p.commenceTime).getTime();
-    return ko - now <= window;
+    const msToKo = ko - now;
+    return msToKo > 15 * 60 * 1000 && msToKo <= window;
   });
 
   if (toUpdate.length === 0) return { updated: 0 };

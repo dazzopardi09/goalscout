@@ -10,9 +10,9 @@
 //   'conflict'       - Sources disagreed — NOT settled, logged separately
 //
 // CLV note:
-//   The Odds API /odds endpoint drops completed events, so the settler
-//   almost never finds closing odds for finished matches.
-//   updatePreKickoffOdds() stores the pre-KO price as closingOdds fallback.
+//   closingOdds is captured separately by captureClosingOdds() (settler.js)
+//   3-15 minutes before kickoff. updatePreKickoffOdds() only writes
+//   preKickoffOdds and preKickoffMovePct -- it does not touch closingOdds.
 // ─────────────────────────────────────────────────────────────
 
 const fs = require('fs');
