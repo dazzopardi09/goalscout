@@ -354,7 +354,7 @@ function getActiveShortlist() {
 }
 
 // ── Status polling ─────────────────────────────────────────────
-async function loadStatus(returnData) {
+async function loadStatus() {
   try {
     var r = await fetch('/api/status');
     var d = await r.json();
@@ -385,9 +385,8 @@ async function loadStatus(returnData) {
           ' AEST';
       }
     }
-    if (returnData) return d;
     return d.status;
-  } catch (e) { return returnData ? null : 'error'; }
+  } catch (e) { return 'error'; }
 }
 
 async function loadShortlist() {
@@ -963,32 +962,7 @@ async function init() {
   var s = await loadStatus();
   await loadShortlist();
   if (s === 'running') pollUntilDone();
-
-  // Seed trackers from first load so first poll tick doesn't trigger spurious reloads
-  var _lastRefresh = null;
-  var _lastSettlementChange = null;
-
-  setInterval(async function() {
-    var d = await loadStatus(true);
-    if (!d) return;
-
-    var rfChanged = d.lastRefresh && d.lastRefresh !== _lastRefresh;
-    var scChanged = d.lastSettlementChange && d.lastSettlementChange !== _lastSettlementChange;
-
-    if (rfChanged) {
-      _lastRefresh = d.lastRefresh;
-      _lastSettlementChange = d.lastSettlementChange;
-      await loadShortlist();
-      if (document.getElementById('perfPanel').style.display !== 'none') {
-        await loadPerformance();
-      }
-    } else if (scChanged) {
-      _lastSettlementChange = d.lastSettlementChange;
-      if (document.getElementById('perfPanel').style.display !== 'none') {
-        await loadPerformance();
-      }
-    }
-  }, 30000);
+  setInterval(loadStatus, 30000);
 }
 init();
 </script>

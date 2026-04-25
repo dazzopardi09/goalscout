@@ -3,13 +3,14 @@
 // REST API — serves cached JSON to the frontend.
 //
 // Endpoints:
-//   GET  /api/status        → refresh state + meta
+//   GET  /api/status        → refresh state + meta + lastSettlementChange
 //   GET  /api/shortlist     → shortlisted matches
 //   GET  /api/matches       → all discovered matches
 //   GET  /api/leagues       → all discovered leagues
 //   GET  /api/match/:id     → match detail (if scraped)
 //   GET  /api/stats         → performance stats
 //   GET  /api/predictions   → raw prediction history
+//   GET  /api/conflicts     → settlement conflicts log
 //   POST /api/refresh       → trigger manual refresh
 //   POST /api/settle        → fetch results + settle pending predictions
 //   POST /api/pre-kickoff   → fetch current odds and update pre-KO prices
@@ -21,8 +22,6 @@ const { runFullRefresh, getRefreshState } = require('../scrapers/orchestrator');
 const {
   getPredictionStats,
   readJSONL,
-  settlePrediction,
-  updatePreKickoffOdds,
 } = require('../engine/history');
 const { fetchScoresAndSettle, fetchCurrentOddsForPending } = require('../engine/settler');
 const config = require('../config');
@@ -34,7 +33,10 @@ const router = express.Router();
 router.get('/status', (req, res) => {
   const meta  = readJSON(config.META_FILE) || {};
   const state = getRefreshState();
-  res.json({ ...state, meta });
+  const lastSettlementChange = req.app.locals.getLastSettlementChange
+    ? req.app.locals.getLastSettlementChange()
+    : null;
+  res.json({ ...state, meta, lastSettlementChange });
 });
 
 // ── Shortlist ─────────────────────────────────────────────────
@@ -77,6 +79,18 @@ router.get('/predictions', (req, res) => {
   res.json(predictions.slice(-limit));
 });
 
+// ── Settlement conflicts ──────────────────────────────────────
+
+router.get('/conflicts', (req, res) => {
+  const conflicts = readJSONL(config.CONFLICTS_FILE);
+  res.json({
+    count: conflicts.length,
+    conflicts: conflicts.sort((a, b) =>
+      (b.timestamp || '').localeCompare(a.timestamp || '')
+    ),
+  });
+});
+
 // ── Manual refresh ────────────────────────────────────────────
 
 router.post('/refresh', async (req, res) => {
@@ -89,21 +103,15 @@ router.post('/refresh', async (req, res) => {
 });
 
 // ── Settle predictions ────────────────────────────────────────
-//
-// Fetches match scores from The-Odds-API /scores endpoint for all
-// pending predictions whose kickoff has passed, then:
-//   1. Updates result (won/lost)
-//   2. Fetches current (closing) odds for CLV calculation
-//   3. Calculates Move% and CLV%
 
 router.post('/settle', async (req, res) => {
   try {
     const result = await fetchScoresAndSettle();
     res.json({
-      settled:  result.settled,
-      skipped:  result.skipped,
-      errors:   result.errors,
-      message:  `Settled ${result.settled} predictions`,
+      settled:   result.settled,
+      conflicts: result.conflicts,
+      counters:  result.counters,
+      message:   `Settled ${result.settled} predictions${result.conflicts > 0 ? `, ${result.conflicts} conflicts logged` : ''}`,
     });
   } catch (err) {
     console.error('[api/settle] error:', err.message);
@@ -112,11 +120,6 @@ router.post('/settle', async (req, res) => {
 });
 
 // ── Pre-kickoff odds update ───────────────────────────────────
-//
-// Fetches current odds for all pending predictions and updates
-// preKickoffOdds + preKickoffMovePct.
-// Designed to be called ~60-90 mins before kickoff.
-// Also called automatically by the pre-KO cron job in index.js.
 
 router.post('/pre-kickoff', async (req, res) => {
   try {

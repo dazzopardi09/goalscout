@@ -1,17 +1,18 @@
 // src/engine/history.js
 // ─────────────────────────────────────────────────────────────
 // Historical prediction logger + stats engine.
-// Supports parallel methods:
-//   - current
-//   - calibrated
+// Supports parallel methods: current, calibrated.
+//
+// Result sources (added for settlement validation):
+//   'verified'       - Odds API + Football-Data agreed
+//   'odds-api'       - Odds API only (league not covered by FD)
+//   'football-data'  - Football-Data only (Odds API missed it)
+//   'conflict'       - Sources disagreed — NOT settled, logged separately
 //
 // CLV note:
 //   The Odds API /odds endpoint drops completed events, so the settler
 //   almost never finds closing odds for finished matches.
-//   To ensure CLV is calculable, updatePreKickoffOdds() also stores
-//   the pre-KO price as closingOdds (best available pre-match price).
-//   settlePrediction() will not overwrite this with null if the settler
-//   comes back empty — it uses the stored value as fallback.
+//   updatePreKickoffOdds() stores the pre-KO price as closingOdds fallback.
 // ─────────────────────────────────────────────────────────────
 
 const fs = require('fs');
@@ -107,6 +108,7 @@ function logPrediction(match, analysis, method = 'current', selectionType = null
     preKickoffMovePct:   null,
     closingOdds:         null,
     clvPct:              null,
+    resultSource:        null,
     status:              'pending',
     result:              null,
     settledAt:           null,
@@ -135,11 +137,10 @@ function updatePreKickoffOdds(fixtureId, market, method, preKoPrice) {
       (p.method || 'current') !== method
     ) return p;
 
-    // Only capture pre-KO once
     if (p.preKickoffOdds != null) return p;
 
     const movePct = (p.marketOdds != null && preKoPrice != null)
-      ? Math.round(((p.marketOdds / preKoPrice) - 1) * 10000) / 100
+      ? Math.round(((preKoPrice / p.marketOdds) - 1) * 10000) / 100
       : null;
 
     updated = true;
@@ -147,12 +148,6 @@ function updatePreKickoffOdds(fixtureId, market, method, preKoPrice) {
       ...p,
       preKickoffOdds:    preKoPrice,
       preKickoffMovePct: movePct,
-      // Store as closingOdds too — best available pre-match price.
-      // The settler will use the /odds endpoint at settlement time and
-      // overwrite this if it finds a fresher price. If the match has
-      // already finished (most common case), /odds returns nothing and
-      // the settler preserves this value instead of writing null.
-      closingOdds: p.closingOdds ?? preKoPrice,
     };
   });
 
@@ -169,7 +164,7 @@ function updatePreKickoffOdds(fixtureId, market, method, preKoPrice) {
 
 // ── Settle prediction ─────────────────────────────────────────
 
-function settlePrediction(fixtureId, market, method, { homeGoals, awayGoals, closingOdds }) {
+function settlePrediction(fixtureId, market, method, { homeGoals, awayGoals, closingOdds, resultSource }) {
   const predictions = readJSONL(config.PREDICTIONS_FILE);
   let updated = false;
 
@@ -191,10 +186,6 @@ function settlePrediction(fixtureId, market, method, { homeGoals, awayGoals, clo
       market === 'btts'      ? homeGoals > 0 && awayGoals > 0 :
       null;
 
-    // Use settler-fetched closing odds if available.
-    // Fall back to whatever was stored at pre-KO time — the /odds endpoint
-    // drops completed events, so closingOdds from the settler is usually null
-    // for finished matches. p.closingOdds was pre-populated by updatePreKickoffOdds.
     const resolvedClosingOdds = closingOdds ?? p.closingOdds ?? null;
 
     const clvPct = (p.marketOdds != null && resolvedClosingOdds != null)
@@ -205,11 +196,12 @@ function settlePrediction(fixtureId, market, method, { homeGoals, awayGoals, clo
 
     return {
       ...p,
-      closingOdds: resolvedClosingOdds,
+      closingOdds:  resolvedClosingOdds,
       clvPct,
-      status:    won == null ? 'void' : won ? 'settled_won' : 'settled_lost',
-      result:    `${homeGoals}-${awayGoals}`,
-      settledAt: new Date().toISOString(),
+      resultSource: resultSource || 'odds-api',
+      status:       won == null ? 'void' : won ? 'settled_won' : 'settled_lost',
+      result:       `${homeGoals}-${awayGoals}`,
+      settledAt:    new Date().toISOString(),
     };
   });
 
@@ -220,8 +212,6 @@ function settlePrediction(fixtureId, market, method, { homeGoals, awayGoals, clo
       'utf8'
     );
 
-    // One result record per fixture — both methods share the same score.
-    // Prevents duplicates when current + calibrated settle in the same run.
     const existingResults = readJSONL(config.RESULTS_FILE);
     const alreadyRecorded = existingResults.some(r => r.fixtureId === fixtureId);
 
@@ -235,11 +225,61 @@ function settlePrediction(fixtureId, market, method, { homeGoals, awayGoals, clo
         over25:       ((homeGoals ?? 0) + (awayGoals ?? 0)) > 2.5,
         under25:      ((homeGoals ?? 0) + (awayGoals ?? 0)) < 2.5,
         bttsYes:      (homeGoals ?? 0) > 0 && (awayGoals ?? 0) > 0,
+        resultSource: resultSource || 'odds-api',
       });
     }
   }
 
   return updated;
+}
+
+// ── Mark prediction as conflicted (sources disagree) ─────────
+
+function markConflict(fixtureId, market, method) {
+  const predictions = readJSONL(config.PREDICTIONS_FILE);
+  let updated = false;
+
+  const newLines = predictions.map(p => {
+    if (
+      p.fixtureId !== fixtureId ||
+      p.market !== market ||
+      (p.method || 'current') !== method
+    ) return p;
+
+    if (p.status !== 'pending' && p.status != null) return p;
+
+    updated = true;
+    return { ...p, status: 'conflict' };
+  });
+
+  if (updated) {
+    fs.writeFileSync(
+      config.PREDICTIONS_FILE,
+      newLines.map(l => JSON.stringify(l)).join('\n') + '\n',
+      'utf8'
+    );
+  }
+
+  return updated;
+}
+
+// ── Log settlement conflict ───────────────────────────────────
+
+function logConflict(prediction, oddsApiResult, fdResult) {
+  ensureHistoryDir();
+  appendJSONL(config.CONFLICTS_FILE, {
+    timestamp:    new Date().toISOString(),
+    fixtureId:    prediction.fixtureId,
+    homeTeam:     prediction.homeTeam,
+    awayTeam:     prediction.awayTeam,
+    league:       prediction.league,
+    leagueSlug:   prediction.leagueSlug,
+    commenceTime: prediction.commenceTime,
+    market:       prediction.market,
+    method:       prediction.method || 'current',
+    oddsApi:      oddsApiResult ? { home: oddsApiResult.homeGoals, away: oddsApiResult.awayGoals } : null,
+    footballData: fdResult      ? { home: fdResult.homeGoals,      away: fdResult.awayGoals }      : null,
+  });
 }
 
 // ── Stats ─────────────────────────────────────────────────────
@@ -252,7 +292,8 @@ function getPredictionStats() {
   for (const r of results) resultMap.set(r.fixtureId, r);
 
   function resolveStatus(p, market) {
-    if (p.status === 'settled_won' || p.status === 'settled_lost' || p.status === 'void') {
+    if (p.status === 'settled_won' || p.status === 'settled_lost' ||
+        p.status === 'void'        || p.status === 'conflict') {
       return p.status;
     }
 
@@ -279,31 +320,19 @@ function getPredictionStats() {
     return resultMap.get(p.fixtureId)?.settledAt || null;
   }
 
-  // ── Reconcile direction and market ───────────────────────────
-  // Historical records may have market and direction out of sync due to
-  // bugs that existed before the away stats fix and model rewrites.
-  // Direction is the authoritative field — derive market from it.
-  // Exception: btts records pre-date the direction field; leave those alone.
-  // Records with no direction at all fall back to deriving direction from market.
   function reconcile(p) {
     const rawDirection = p.direction || null;
     const rawMarket = p.market || null;
 
-    // BTTS is a legacy market that predates the direction field — preserve it.
     if (rawMarket === 'btts') {
-      return {
-        direction: rawDirection || 'o25', // btts was always o25-adjacent
-        market: 'btts',
-      };
+      return { direction: rawDirection || 'o25', market: 'btts' };
     }
 
     if (rawDirection) {
-      // Direction is set — it is authoritative. Derive market from it.
       const market = rawDirection === 'u25' ? 'under_2.5' : 'over_2.5';
       return { direction: rawDirection, market };
     }
 
-    // No direction — derive it from market.
     const direction = rawMarket === 'under_2.5' ? 'u25' : 'o25';
     const market = rawMarket || 'over_2.5';
     return { direction, market };
@@ -325,10 +354,11 @@ function getPredictionStats() {
   });
 
   function marketStats(preds) {
-    const settled = preds.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
-    const won     = settled.filter(p => p.status === 'settled_won');
-    const pending = preds.filter(p => p.status === 'pending');
-    const voided  = preds.filter(p => p.status === 'void');
+    const settled   = preds.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
+    const won       = settled.filter(p => p.status === 'settled_won');
+    const pending   = preds.filter(p => p.status === 'pending');
+    const voided    = preds.filter(p => p.status === 'void');
+    const conflicts = preds.filter(p => p.status === 'conflict');
 
     const hitRate = settled.length > 0
       ? Math.round((won.length / settled.length) * 1000) / 10
@@ -362,7 +392,6 @@ function getPredictionStats() {
       brierScore = Math.round((sum / settled.length) * 10000) / 10000;
     }
 
-    // Units and ROI only count predictions where odds were available.
     const settledWithOdds = settled.filter(p => p.marketOdds != null);
 
     const units = settledWithOdds.reduce((s, p) => {
@@ -376,11 +405,12 @@ function getPredictionStats() {
       : null;
 
     return {
-      total:   preds.length,
-      settled: settled.length,
-      won:     won.length,
-      pending: pending.length,
-      awaiting: voided.length,
+      total:     preds.length,
+      settled:   settled.length,
+      won:       won.length,
+      pending:   pending.length,
+      awaiting:  voided.length,
+      conflicts: conflicts.length,
       hitRate,
       meanModelProb,
       meanEdgePct,
@@ -397,10 +427,11 @@ function getPredictionStats() {
     const overPreds  = preds.filter(p => p.market === 'over_2.5');
     const underPreds = preds.filter(p => p.market === 'under_2.5');
 
-    const settled = preds.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
-    const won     = settled.filter(p => p.status === 'settled_won');
-    const pending = preds.filter(p => p.status === 'pending');
-    const voided  = preds.filter(p => p.status === 'void');
+    const settled   = preds.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
+    const won       = settled.filter(p => p.status === 'settled_won');
+    const pending   = preds.filter(p => p.status === 'pending');
+    const voided    = preds.filter(p => p.status === 'void');
+    const conflicts = preds.filter(p => p.status === 'conflict');
 
     return {
       summary: {
@@ -410,6 +441,7 @@ function getPredictionStats() {
         pending:      pending.length,
         awaiting:     voided.length,
         void:         voided.length,
+        conflicts:    conflicts.length,
         voidRatePct:  preds.length > 0 ? Math.round((voided.length / preds.length) * 1000) / 10 : 0,
       },
       markets: {
@@ -432,9 +464,10 @@ function getPredictionStats() {
     calibrated: aggregateFor(annotated.filter(p => (p.method || 'current') === 'calibrated')),
   };
 
-  const allSettled = annotated.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
-  const allWon     = annotated.filter(p => p.status === 'settled_won');
-  const allVoid    = annotated.filter(p => p.status === 'void');
+  const allSettled   = annotated.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
+  const allWon       = annotated.filter(p => p.status === 'settled_won');
+  const allVoid      = annotated.filter(p => p.status === 'void');
+  const allConflicts = annotated.filter(p => p.status === 'conflict');
 
   return {
     summary: {
@@ -444,6 +477,7 @@ function getPredictionStats() {
       pending:     annotated.filter(p => p.status === 'pending').length,
       awaiting:    allVoid.length,
       void:        allVoid.length,
+      conflicts:   allConflicts.length,
       voidRatePct: annotated.length > 0 ? Math.round((allVoid.length / annotated.length) * 1000) / 10 : 0,
     },
     methods,
@@ -461,6 +495,8 @@ module.exports = {
   logPrediction,
   updatePreKickoffOdds,
   settlePrediction,
+  markConflict,
+  logConflict,
   readJSONL,
   getPredictionStats,
 };
