@@ -5,37 +5,37 @@
 // P(Over 2.5) is estimated from weighted team/league stats.
 // P(Under 2.5) = 1 - P(Over 2.5).
 //
-// ── Margin removal (devigging) ─────────────────────────────
+// ── Edge calculation ───────────────────────────────────────
 //
-// Bookmakers build a profit margin (overround) into their odds.
-// A soccer O2.5 two-way market typically carries 3-7% margin
-// depending on the bookmaker (Pinnacle ~2-3%, Bet365 ~5-7%).
+// Edge is calculated as:
 //
-// Raw implied probabilities always sum to MORE than 100%,
-// meaning they overstate the market's true view of each side.
+//   edge = (marketOdds / fairOdds - 1) * 100
+//        = (modelProbability * marketOdds - 1) * 100
 //
-// Before comparing your model probability to the market,
-// the margin must be removed ("devigging"):
+// Positive edge = available odds exceed model fair odds → value bet
+// Negative edge = available odds are below model fair odds → avoid
 //
-//   impliedOver  = 1 / oddsOver
-//   impliedUnder = 1 / oddsUnder
-//   total        = impliedOver + impliedUnder      (e.g. 1.029)
-//   trueOver     = impliedOver / total             (normalised)
-//   trueUnder    = impliedUnder / total
+// This is the operationally correct formula for betting decisions
+// because it directly answers: "does the price I can actually get
+// exceed what my model says it's worth?"
 //
-// Edge is then:
-//   edge = (yourProbability / trueMarketProbability - 1) * 100
+// ── Why devigging is NOT used for the main edge field ──────
 //
-// This removes false edge caused by bookmaker margin and gives
-// a clean measure of whether your model disagrees with the
-// market AFTER costs are stripped out.
+// removeMargin() (below) can strip bookmaker margin from a two-way
+// market to produce "true" market probabilities. However, this is
+// only valid when BOTH the Over AND Under prices come from the
+// SAME bookmaker at the SAME moment.
 //
-// ── Edge interpretation ────────────────────────────────────
+// GoalScout currently stores the BEST Over price across all books
+// and the BEST Under price across all books. These may come from
+// completely different bookmakers (e.g. Over from William Hill,
+// Under from Matchbook). Devigging a synthetic cross-book market
+// produces a meaningless "true probability" and therefore a
+// misleading edge figure.
 //
-//   Positive edge = your model thinks the true probability is
-//     HIGHER than the market's margin-free view → potential value
-//   Negative edge = model is below the market's true view → avoid
-//   Edge of +5% means your model says 55% vs market's 50% true view
+// removeMargin() is preserved for future use when same-bookmaker
+// both-sides prices are available (e.g. Betfair Exchange, or a
+// single-book odds fetch).
 //
 // ── Calibration ────────────────────────────────────────────
 //
@@ -100,15 +100,16 @@ function fairOdds(prob) {
 /**
  * Remove bookmaker margin from a two-way O2.5 / U2.5 market.
  *
- * Bookmakers inflate implied probabilities so they sum above 100%.
- * This function normalises both sides back to a true 100% market.
+ * ⚠ IMPORTANT: Only valid when BOTH prices are from the SAME bookmaker
+ * at the SAME time. Do NOT use with cross-book best prices (best Over
+ * from one book, best Under from another) — the result is meaningless.
+ *
+ * Preserved for future use with same-bookmaker or exchange data.
  *
  * Returns:
  *   trueOver  — market's margin-free probability for Over 2.5
  *   trueUnder — market's margin-free probability for Under 2.5
  *   margin    — bookmaker's margin as a percentage (e.g. 2.9%)
- *
- * Returns nulls if either price is missing.
  */
 function removeMargin(overPrice, underPrice) {
   if (!overPrice || !underPrice) {
@@ -122,24 +123,27 @@ function removeMargin(overPrice, underPrice) {
   return {
     trueOver:  Math.round((impliedOver  / total) * 10000) / 10000,
     trueUnder: Math.round((impliedUnder / total) * 10000) / 10000,
-    margin:    Math.round((total - 1) * 10000) / 100,  // e.g. 2.87
+    margin:    Math.round((total - 1) * 10000) / 100,
   };
 }
 
 /**
- * Calculate edge against the market's TRUE (margin-free) probability.
+ * Calculate actionable edge percentage.
  *
- * edge = (modelProbability / trueMarketProbability - 1) * 100
+ * edge = (marketOdds / fairOdds - 1) * 100
  *
- * Positive = model is above the market's fair view → potential value
- * Negative = model is below the market's fair view → avoid
+ * Positive = available odds exceed model fair odds → value bet
+ * Negative = available odds are below model fair odds → avoid
  *
- * This is cleaner than comparing model vs raw market odds, because
- * it strips out the bookmaker's margin before measuring disagreement.
+ * fairOdds = 1 / modelProbability, so this is equivalent to:
+ *   edge = (modelProbability * marketOdds - 1) * 100
+ *
+ * Uses the actual available price — not a devigged cross-book
+ * synthetic probability. See module comment for why.
  */
-function calcEdge(modelProbability, trueMarketProbability) {
-  if (!modelProbability || !trueMarketProbability) return null;
-  return Math.round(((modelProbability / trueMarketProbability) - 1) * 10000) / 100;
+function calcEdge(marketOdds, fairOddsVal) {
+  if (!marketOdds || !fairOddsVal) return null;
+  return Math.round(((marketOdds / fairOddsVal) - 1) * 10000) / 100;
 }
 
 /**
@@ -148,8 +152,9 @@ function calcEdge(modelProbability, trueMarketProbability) {
  * Uses match.direction ('o25' or 'u25', set by shortlist.js) to
  * determine which market side to measure edge against.
  *
- * Both sides of the market are always captured. Margin removal
- * runs when both Over AND Under prices are available.
+ * Both sides of the market are always captured. removeMargin() is
+ * called for transparency (margin is stored) but is NOT used for
+ * the main edge field — see module comment.
  */
 function analyseMatch(match, leagueStats = {}) {
   const o25prob = estimateO25(match, leagueStats);
@@ -166,42 +171,40 @@ function analyseMatch(match, leagueStats = {}) {
   const overPrice  = match.odds?.o25?.price  || null;
   const underPrice = match.odds?.u25?.price  || null;
 
-  // Remove bookmaker margin from the two-way market
-  const { trueOver, trueUnder, margin } = removeMargin(overPrice, underPrice);
+  // Margin stored for transparency — NOT used for edge (cross-book prices)
+  const { margin } = removeMargin(overPrice, underPrice);
 
-  // Edge: model vs TRUE market probability (margin-stripped)
-  const o25edge = o25prob != null && trueOver  != null
-    ? calcEdge(o25prob, trueOver)
+  // Edge: available price vs model fair odds (actionable, consistent with UI)
+  const o25edge = (overPrice  != null && o25fair != null)
+    ? calcEdge(overPrice,  o25fair)
     : null;
 
-  const u25edge = u25prob != null && trueUnder != null
-    ? calcEdge(u25prob, trueUnder)
+  const u25edge = (underPrice != null && u25fair != null)
+    ? calcEdge(underPrice, u25fair)
     : null;
 
   return {
     modelVersion: MODEL_VERSION,
     timestamp: new Date().toISOString(),
     direction,
-    marketMarginPct: margin,  // stored for transparency / tracking
+    marketMarginPct: margin,
 
     o25: {
-      probability:         o25prob,
-      fairOdds:            o25fair,
-      marketOdds:          overPrice,
-      trueMarketProb:      trueOver,   // margin-stripped market view
-      bookmaker:           match.odds?.o25?.bookmaker    || null,
-      bookmakerKey:        match.odds?.o25?.bookmakerKey || null,
-      edge:                o25edge,
+      probability:    o25prob,
+      fairOdds:       o25fair,
+      marketOdds:     overPrice,
+      bookmaker:      match.odds?.o25?.bookmaker    || null,
+      bookmakerKey:   match.odds?.o25?.bookmakerKey || null,
+      edge:           o25edge,
     },
 
     u25: {
-      probability:         u25prob,
-      fairOdds:            u25fair,
-      marketOdds:          underPrice,
-      trueMarketProb:      trueUnder,  // margin-stripped market view
-      bookmaker:           match.odds?.u25?.bookmaker    || null,
-      bookmakerKey:        match.odds?.u25?.bookmakerKey || null,
-      edge:                u25edge,
+      probability:    u25prob,
+      fairOdds:       u25fair,
+      marketOdds:     underPrice,
+      bookmaker:      match.odds?.u25?.bookmaker    || null,
+      bookmakerKey:   match.odds?.u25?.bookmakerKey || null,
+      edge:           u25edge,
     },
   };
 }
