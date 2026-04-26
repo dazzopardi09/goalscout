@@ -49,6 +49,16 @@ const BACKTEST_DIR = path.join(config.DATA_DIR, 'backtests', 'context_raw');
 const OUT_FILE     = path.join(BACKTEST_DIR, `${leagueSlug}_${season}.jsonl`);
 const INDEX_FILE   = path.join(BACKTEST_DIR, '_index.json');
 
+// ── Versioning ────────────────────────────────────────────────
+// Bump MODEL_VERSION when scoring logic or flags change.
+// Bump FEATURE_SET_VERSION when rolling-stats computation changes
+// (window size, weighting, new fields, etc.).
+// Both are recorded on every row and in _index.json so we can trace
+// which code produced which rows — matters once we have multiple seasons.
+
+const MODEL_VERSION       = 'context_raw_v1.1';
+const FEATURE_SET_VERSION = 'pre_match_v1';
+
 // ── Helpers ───────────────────────────────────────────────────
 
 function round2(n)  { return Math.round(n * 100) / 100; }
@@ -58,6 +68,16 @@ function pct(n, d)  { return d > 0 ? Math.round((n / d) * 1000) / 10 : null; }
 function seasonFriendly(s) {
   // '2024_25' → '2024-25'
   return s.replace('_', '-');
+}
+
+// Deterministic fixture identifier — stable join key across all models.
+// Format: {leagueCode}_{YYYYMMDD}_{homeSlug}_{awaySlug}
+// Example: E0_20241109_arsenal_newcastle-united
+// Must be computed the same way in every model's runner.
+function makeFixtureId(leagueCode, date, homeTeam, awayTeam) {
+  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+  const slug    = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  return `${leagueCode}_${dateStr}_${slug(homeTeam)}_${slug(awayTeam)}`;
 }
 
 // Strip the heavy matches[] array from rolling stats before storing
@@ -132,6 +152,11 @@ function buildRow(fixture, scored, homeR, awayR, seasonStart) {
   }
 
   return {
+    // Identity — stable join key across all models (see ARCHITECTURE.md)
+    fixtureId:        makeFixtureId(SLUG_TO_FDC_DIV[leagueSlug] || leagueSlug, fixture.date, fixture.homeTeam, fixture.awayTeam),
+    modelVersion:     MODEL_VERSION,
+    featureSetVersion: FEATURE_SET_VERSION,
+
     season:       seasonFriendly(season),
     league:       leagueSlug,
     leagueCode:   SLUG_TO_FDC_DIV[leagueSlug] || leagueSlug,
@@ -359,18 +384,20 @@ function updateIndex(rows) {
   const u25     = preds.filter(r => r.context_direction === 'u25');
 
   const entry = {
-    league:          leagueSlug,
-    season:          seasonFriendly(season),
-    file:            path.basename(OUT_FILE),
-    generatedAt:     new Date().toISOString(),
-    fixtures:        rows.length,
-    predictions:     preds.length,
-    skipped:         rows.length - preds.length,
-    won:             won.length,
-    hitRate:         preds.length > 0 ? round4(won.length / preds.length) : null,
-    o25Predictions:  o25.length,
-    u25Predictions:  u25.length,
-    hasFullResults:  true,
+    league:           leagueSlug,
+    season:           seasonFriendly(season),
+    file:             path.basename(OUT_FILE),
+    modelVersion:     MODEL_VERSION,
+    featureSetVersion: FEATURE_SET_VERSION,
+    generatedAt:      new Date().toISOString(),
+    fixtures:         rows.length,
+    predictions:      preds.length,
+    skipped:          rows.length - preds.length,
+    won:              won.length,
+    hitRate:          preds.length > 0 ? round4(won.length / preds.length) : null,
+    o25Predictions:   o25.length,
+    u25Predictions:   u25.length,
+    hasFullResults:   true,
   };
 
   let index = { leagues: [] };
