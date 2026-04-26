@@ -56,7 +56,7 @@ const INDEX_FILE   = path.join(BACKTEST_DIR, '_index.json');
 // Both are recorded on every row and in _index.json so we can trace
 // which code produced which rows — matters once we have multiple seasons.
 
-const MODEL_VERSION       = 'context_raw_v1.1';
+const MODEL_VERSION       = 'context_raw_v1.2';  // v1.2: direction-aware thresholds (O2.5=3, U2.5=4)
 const FEATURE_SET_VERSION = 'pre_match_v1';
 
 // ── Helpers ───────────────────────────────────────────────────

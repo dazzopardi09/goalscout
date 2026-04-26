@@ -21,7 +21,8 @@
 // ── Constants ────────────────────────────────────────────────
 
 const MIN_GAMES_REQUIRED = 4;   // below this → skip (insufficient_recent_data)
-const MIN_WINNING_SCORE  = 4;   // below this → skip (below_threshold)
+const MIN_O25_SCORE      = 3;   // O2.5 threshold — score=3 O2.5 hits at 60.0% (Stage 5 analysis)
+const MIN_U25_SCORE      = 4;   // U2.5 threshold — score=3 U2.5 hits at 30.8%, keep stricter filter
 
 // Odds ratio threshold to define a "clear mismatch" between favourite and underdog.
 // e.g. 1.5 vs 4.5 = ratio 3.0 → clear mismatch
@@ -348,7 +349,13 @@ function scoreContext(homeRolling, awayRolling, fixtureOdds = {}) {
   const direction    = o25Score > u25Score ? 'o25' : 'u25';
   const winningScore = Math.max(o25Score, u25Score);
 
-  if (winningScore < MIN_WINNING_SCORE) {
+  // Direction-aware threshold: O2.5 uses MIN_O25_SCORE (3), U2.5 uses MIN_U25_SCORE (4).
+  // Stage 5 analysis on EPL 2024-25: score=3 O2.5 hits at 60.0% (35 fixtures) — same
+  // signal as passing predictions. Score=3 U2.5 hits at 30.8% (13 fixtures) — below base
+  // rate, threshold correctly filters these out.
+  const minScore = direction === 'o25' ? MIN_O25_SCORE : MIN_U25_SCORE;
+
+  if (winningScore < minScore) {
     return {
       skip: true, skipReason: 'below_threshold',
       direction, o25Score, u25Score,
@@ -407,5 +414,6 @@ module.exports = {
   scoreU25,
   computeRawProbability,
   MIN_GAMES_REQUIRED,
-  MIN_WINNING_SCORE,
+  MIN_O25_SCORE,
+  MIN_U25_SCORE,
 };

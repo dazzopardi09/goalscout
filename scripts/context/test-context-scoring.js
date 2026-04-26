@@ -402,13 +402,15 @@ const ipswich_gw18 = rolling({
 const result_wolves_ips = scoreContext(wolves_gw18, ipswich_gw18, {});
 
 // Wolves vs Ipswich: O2.5 scores 3, U2.5 scores 1.
-// O2.5 wins direction but score 3 < threshold of 4.
-// Correctly skipped as below_threshold — the model is conservative on marginal cases.
-// (Actual result was O2.5 ✓ — a borderline miss the Stage 3 backtest will evaluate.)
-assertTrue('Wolves vs Ipswich: skipped (below_threshold, score 3 < 4)', result_wolves_ips.skip);
-assert('Wolves vs Ipswich: skipReason = below_threshold', result_wolves_ips.skipReason, 'below_threshold');
-assert('Wolves vs Ipswich: O2.5 score = 3 (direction winner but below gate)', result_wolves_ips.o25Score, 3);
+// O2.5 wins direction. Under v1.2 threshold rules, O2.5 score=3 now PASSES
+// (Stage 5 analysis: score=3 O2.5 hits at 60.0% — same signal as passing predictions).
+// U2.5 threshold remains at 4, so this would still skip if direction were U2.5.
+// (Actual result was O2.5 ✓ — 1-2, total 3 goals — model was correct.)
+assertFalse('Wolves vs Ipswich: not skipped (O2.5 score=3 now passes in v1.2)', result_wolves_ips.skip);
+assert('Wolves vs Ipswich: direction = o25', result_wolves_ips.direction, 'o25');
+assert('Wolves vs Ipswich: O2.5 score = 3', result_wolves_ips.o25Score, 3);
 assert('Wolves vs Ipswich: U2.5 score = 1', result_wolves_ips.u25Score, 1);
+assert('Wolves vs Ipswich: grade = B', result_wolves_ips.grade, 'B');
 
 console.log(`\n     → Model says: ${result_wolves_ips.direction?.toUpperCase()} (score ${result_wolves_ips.winningScore}, grade ${result_wolves_ips.grade})`);
 console.log(`       Actual result: O2.5 ✓ (1-2, total 3 goals)`);
