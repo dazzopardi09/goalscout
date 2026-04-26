@@ -222,16 +222,16 @@ This works because both runners use `makeFixtureId` with the same inputs.
 
 ---
 
-## Current state (as of Stage 3 complete)
+## Current state (as of Stage 6 complete)
 
 | Layer            | Status      | Location |
 |------------------|-------------|----------|
-| Raw historical   | ✅ Exists   | `data/historical/` |
+| Raw historical   | ✅ Exists   | `data/historical/england/` — 6 EPL seasons (2019-20 to 2024-25) |
 | Feature store    | 🔲 Future   | `data/features/` — see trigger conditions above |
 | Prediction store | 🔲 Future   | `data/predictions/` — becomes real at Stage 9 |
-| Backtest store   | ✅ Exists   | `data/backtests/context_raw/` (EPL 2024-25) |
+| Backtest store   | ✅ Exists   | `data/backtests/context_raw/` — 6 EPL seasons, 1,386 predictions |
 
-Next step: **Stage 4** — Context Research UI.
+Next step: **Stage 7** — Cross-league expansion (Bundesliga, Serie A, La Liga minimum).
 
 ---
 

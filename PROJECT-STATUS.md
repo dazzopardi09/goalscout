@@ -249,3 +249,85 @@ curl -s http://localhost:3030/api/conflicts | jq '.count'
 - Pre-KO move (mean): -3.5% O2.5, -2.2% U2.5 (negative = market agrees, good)
 - CLV figures in UI: partially reliable — see legacy caveat above
 - Sample still small — Brier and edge are more meaningful than hit rate at this stage
+
+## Stage 4 — Context Research UI
+Completed: 2026-04-26
+
+### Features shipped
+- Research tab (🔬) added to GoalScout dashboard alongside Shortlist and Performance
+- Season selector dropdown populated from `_index.json` — supports single season or aggregate mode
+- Aggregate mode ("All seasons") loads all seasons in parallel, merges into one dataset
+- Headline cards: Hit Rate, O2.5, U2.5, ROI, Mean CLV — all recompute on every filter change
+- Filter bar: Direction, Grade, Result, Flags (AND logic), Gameweek range slider
+- Flag performance table: slice-aware — respects direction/grade/result/gameweek filters, excludes flag filters to avoid circular analysis
+- Flag tooltips: hover any flag abbreviation (STO, BLD, CDO, OSIR, LAUS, BWA) to see full name, meaning, and expected direction
+- Gameweek hit-rate chart (SVG): bar per GW, coloured vs season average, volume strip
+- Edge vs Outcome chart (SVG): bucket bars, upward slope = meaningful edge ranking
+- Predictions table: paginated 50/page in Standard mode
+- Gameweek mode: groups predictions by GW across seasons, hit rate per group, Season column replaces GW
+- Season sort (Newest first / Oldest first): controls row order within each GW group in Gameweek mode
+- Detail drawer: full fixture detail, rolling inputs, flags, market data, copy fixtureId
+- Gameweek slider max set dynamically from data (EPL 2024-25 calendar weeks exceed 38)
+
+### API endpoints added (src/api/routes.js)
+- GET /api/context/index → serves _index.json (season metadata)
+- GET /api/context/backtest?league=&season= → serves JSONL as JSON array (path-traversal safe)
+
+### Model label correction
+- Static model label corrected to v1.2 (was incorrectly showing v1.1)
+
+---
+
+## Stage 5 — Single-season analysis and model assessment
+Completed: 2026-04-26
+
+### Findings (EPL 2024-25, context_raw v1.1 → v1.2)
+- O2.5 hit rate: 60.3% — above EPL base rate, consistent signal
+- CDO flag: -14.7pp delta (46.7% when fired vs 61.4% when not) — strongest signal, working as designed
+- `strong_two_sided_over`: -5.4pp delta (unexpected, flagged for multi-season review)
+- U2.5 hit rate: 47.4% on 38 predictions — at base rate, no validated signal
+- ROI: -3.4%, CLV: -0.34% — expected for uncalibrated model
+
+### Targeted fix applied: direction-aware thresholds (context_raw v1.2)
+- Score=3 O2.5 fixtures: 60.0% hit rate on 35 fixtures = same signal as passing predictions
+- Score=3 U2.5 fixtures: 30.8% hit rate on 13 fixtures = below base rate, correctly filtered
+- Change: MIN_O25_SCORE = 3, MIN_U25_SCORE = 4 (was flat 4 for both)
+- Result: 237 predictions vs 202 (+17.3%), O2.5 hit rate unchanged at 60.3%
+- 61/61 unit tests pass after test update
+
+### Decision: Proceed to Stage 6 as-is
+- `strong_two_sided_over` flagged for re-evaluation after multi-season data
+- U2.5 accepted as unvalidated — collect data, do not rely on for Stage 8
+
+---
+
+## Stage 6 — Multi-season EPL expansion
+Completed: 2026-04-26
+
+### Seasons run (context_raw v1.2)
+| Season  | Preds | O2.5 hit | U2.5 hit | Overall | ROI   | CLV    |
+|---------|-------|----------|----------|---------|-------|--------|
+| 2024-25 | 237   | 60.3%    | 47.4%    | 58.2%   | -3.4% | -0.34% |
+| 2023-24 | 265   | 64.7%    | 33.3%    | 61.5%   | -3.5% | -0.77% |
+| 2022-23 | 233   | 55.0%    | 61.0%    | 57.1%   | -1.1% | +0.49% |
+| 2021-22 | 221   | 56.9%    | 46.8%    | 53.4%   | -5.5% | -0.20% |
+| 2020-21 | 219   | 54.3%    | 56.7%    | 55.3%   | -2.8% | -0.08% |
+| 2019-20 | 211   | 57.7%    | 49.4%    | 54.5%   | -8.8% | +1.26% |
+| **AGG** |**1,386**|**~58.3%**|**~50.0%**|**56.7%**|**-4.1%**|**-0.02%**|
+
+### Key findings
+- CDO confirmed in 4/5 non-COVID seasons as suppressor signal (avg delta ~-15pp in strong years)
+- `strong_two_sided_over` rehabilitated: net positive in 4/6 seasons; 2024-25 was the outlier
+- `both_leaky_defence` unresolved: strong in 3 seasons, strongly negative in 2; N too small per season
+- Aggregate CLV -0.02% across 1,386 predictions: model is near fair value — not wrong direction
+- ROI gap (-4.1%) is a calibration problem, not a direction problem
+- 2019-20 flagged as COVID anomaly (neutral venues, no crowd effect, home/away CDO assumptions invalid)
+  → Exclude from Stage 8 deployment metrics
+
+### Five-season aggregate (excluding 2019-20)
+1,175 predictions · ~57.7% O2.5 hit rate · ROI ~-3.3% · CLV ~-0.18%
+
+### Decision: Proceed to Stage 7 unchanged
+- No model changes before cross-league expansion
+- `strong_two_sided_over` concerns from Stage 5 fully resolved by multi-season data
+- `both_leaky_defence` needs Stage 7 volume to conclude
