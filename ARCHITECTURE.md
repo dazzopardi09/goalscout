@@ -127,6 +127,16 @@ Example: `data/backtests/context_raw/england_2024_25.jsonl`
 
 **Status: EXISTS** (for `context_raw` only, EPL 2024-25)
 
+Every row carries a `status` field as a lifecycle marker:
+- `"settled"` — prediction was made and the match result is known
+- `"skipped"` — model passed on this fixture (below threshold, insufficient data, etc.)
+- `"pre_match"` — reserved for future live pipeline use (Stage 8+)
+
+Backtest rows only ever use `"settled"` or `"skipped"`. The live prediction pipeline
+(Stage 8) will write `"pre_match"` rows and update them to `"settled"` once results
+arrive. UI consumers should always filter on `status` explicitly rather than inferring
+state from null fields.
+
 **Who reads it:** The Stage 4 research section of GoalScout's Performance tab reads
 this directly. The backtest runner re-generates it when you run
 `node scripts/context/run-backtest.js`.

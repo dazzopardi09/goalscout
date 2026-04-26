@@ -156,6 +156,7 @@ function buildRow(fixture, scored, homeR, awayR, seasonStart) {
     fixtureId:        makeFixtureId(SLUG_TO_FDC_DIV[leagueSlug] || leagueSlug, fixture.date, fixture.homeTeam, fixture.awayTeam),
     modelVersion:     MODEL_VERSION,
     featureSetVersion: FEATURE_SET_VERSION,
+    status:           scored.skip ? 'skipped' : 'settled',
 
     season:       seasonFriendly(season),
     league:       leagueSlug,
