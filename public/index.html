@@ -8,6 +8,209 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<style>
+/* ── Context Research — drawer ───────────────────────────────── */
+#ctxDrawerOverlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 200;
+  display: none;
+}
+#ctxDrawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(520px, 94vw);
+  background: #0f1623;
+  border-left: 1px solid rgba(255,255,255,.08);
+  z-index: 201;
+  overflow-y: auto;
+  padding: 24px 20px;
+  transform: translateX(100%);
+  transition: transform .22s cubic-bezier(.4,0,.2,1);
+  display: none;
+}
+#ctxDrawer.open { transform: translateX(0); }
+
+/* ── Context Research — panels ───────────────────────────────── */
+.ctx-panel {
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.02);
+  border-radius: 20px;
+  padding: 18px 20px;
+  margin-bottom: 12px;
+}
+.ctx-panel-head {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: #94a3b8;
+  margin-bottom: 14px;
+}
+
+/* ── Flag table ──────────────────────────────────────────────── */
+.ctx-flag-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ctx-flag-table thead th {
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: #66758c;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  font-weight: 500;
+}
+.ctx-flag-table tbody tr {
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.ctx-flag-table tbody td {
+  padding: 8px 8px;
+  color: #cbd5e1;
+  vertical-align: middle;
+}
+
+/* ── Predictions table ───────────────────────────────────────── */
+.ctx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ctx-table thead th {
+  padding: 10px 8px;
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: #66758c;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  font-weight: 500;
+  white-space: nowrap;
+  background: rgba(255,255,255,.02);
+}
+.ctx-table tbody tr {
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  transition: background .1s;
+}
+.ctx-table tbody tr:hover { background: rgba(255,255,255,.03); }
+.ctx-table tbody td { padding: 10px 8px; vertical-align: middle; }
+
+/* ── Pagination ──────────────────────────────────────────────── */
+.ctx-pagination {
+  display: flex; align-items: center; justify-content: center;
+  gap: 14px; padding: 16px 0; margin-top: 4px;
+}
+.ctx-page-btn {
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.04);
+  color: #94a3b8;
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ctx-page-btn:hover:not(:disabled) { background: rgba(255,255,255,.08); color: #e2e8f0; }
+.ctx-page-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+/* ── Drawer sections ─────────────────────────────────────────── */
+.ctx-drawer-section {
+  border-top: 1px solid rgba(255,255,255,.07);
+  padding: 14px 0;
+}
+.ctx-drawer-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: #66758c;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+/* ── Gameweek + edge chart containers ────────────────────────── */
+.ctx-chart-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Selector strip ──────────────────────────────────────────── */
+.ctx-selector-strip {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 14px 0 10px;
+}
+.ctx-selector-label {
+  font-size: 11px; color: #66758c;
+  text-transform: uppercase; letter-spacing: .14em;
+}
+.ctx-selector-meta {
+  font-size: 11px; color: #3d4f6a;
+  font-family: 'JetBrains Mono', monospace;
+  padding-bottom: 12px;
+}
+
+/* ── Filter bar ──────────────────────────────────────────────── */
+.ctx-filter-row {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.ctx-chip {
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.03);
+  color: #94a3b8;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ctx-chip:hover { border-color: rgba(255,255,255,.18); color: #cbd5e1; }
+.ctx-chip.active {
+  border-color: rgba(52,211,153,.3);
+  background: rgba(16,185,129,.15);
+  color: #bbf7d0;
+}
+.ctx-flag-checks {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.ctx-flag-check-label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: #66758c; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.02);
+  border-radius: 8px; padding: 5px 9px;
+}
+.ctx-flag-check-label:hover { border-color: rgba(255,255,255,.14); color: #94a3b8; }
+.ctx-flag-check-label input { margin: 0; accent-color: #34d399; cursor: pointer; }
+.ctx-gw-wrap {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.ctx-gw-slider {
+  -webkit-appearance: none; appearance: none;
+  height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,.1); cursor: pointer; width: 90px;
+}
+.ctx-gw-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: #34d399; cursor: pointer;
+}
+.ctx-count {
+  font-size: 11px; color: #3d4f6a;
+  padding-bottom: 10px;
+}
+.ctx-tip { cursor: help; color: #3d4f6a; font-size: 11px; }
+
+/* ── Phase note (reuse perf style if available, else define) ── */
+.ctx-phase-note {
+  display: flex; align-items: flex-start; gap: 10px;
+  border: 1px solid rgba(99,102,241,.2);
+  background: rgba(99,102,241,.06);
+  border-radius: 14px; padding: 14px 16px;
+  font-size: 12px; color: #94a3b8; line-height: 1.6;
+  margin-top: 14px;
+}
+.ctx-phase-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #818cf8; margin-top: 4px; flex-shrink: 0;
+}
+</style>
 </head>
 <body>
 <div class="app">
@@ -37,6 +240,7 @@
   <div class="tab-bar">
     <button class="tab-btn active" id="tabShortlist" onclick="switchTab('shortlist')">📋 Shortlist</button>
     <button class="tab-btn" id="tabPerf" onclick="switchTab('perf')">📊 Performance</button>
+    <button class="tab-btn" id="tabContext" onclick="switchTab('context')">🔬 Research</button>
     <button class="tab-btn tab-btn--right" id="tabSettle" onclick="triggerSettle(this)">↻ Settle now</button>
   </div>
 
@@ -118,7 +322,6 @@
         <button class="market-tab" id="perfMethodCalibrated" onclick="switchPerfMethod('calibrated')">Calibrated</button>
       </div>
 
-
       <!-- Market cards -->
       <div class="perf-mkt-grid">
         <div class="perf-mkt-card" id="perfO25Panel"></div>
@@ -193,6 +396,119 @@
     </div><!-- /perfContent -->
   </div><!-- /perfPanel -->
 
+  <!-- ════════════════════════════════════════════════════════
+       CONTEXT RESEARCH PANEL
+       ════════════════════════════════════════════════════════ -->
+  <div id="contextPanel" style="display:none;margin-top:14px">
+
+    <div id="ctxLoading" style="text-align:center;padding:2rem;color:#8b9ab0;font-size:14px">
+      Loading research data...
+    </div>
+
+    <div id="ctxContent" style="display:none">
+
+      <!-- Selector strip -->
+      <div class="ctx-selector-strip">
+        <span class="ctx-selector-label">Model</span>
+        <span style="font-size:13px;color:#94a3b8;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:7px 12px">context_raw v1.1</span>
+        <span class="ctx-selector-label" style="margin-left:8px">League</span>
+        <span style="font-size:13px;color:#94a3b8;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:7px 12px">England</span>
+        <span class="ctx-selector-label" style="margin-left:8px">Season</span>
+        <span style="font-size:13px;color:#94a3b8;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:7px 12px">2024-25</span>
+      </div>
+      <div class="ctx-selector-meta" id="ctxSelectorMeta"></div>
+
+      <!-- Headline cards -->
+      <div class="perf-hero-strip" id="ctxCards"></div>
+
+      <!-- Filter bar -->
+      <div class="ctx-panel" style="margin-top:4px">
+        <div class="ctx-filter-row">
+          <div class="filter-group">
+            <span class="filter-label">Direction</span>
+            <button class="ctx-chip active" data-ctxgroup="direction" data-ctxval="all" onclick="ctxChipClick(this)">All</button>
+            <button class="ctx-chip" data-ctxgroup="direction" data-ctxval="o25" onclick="ctxChipClick(this)">O2.5</button>
+            <button class="ctx-chip" data-ctxgroup="direction" data-ctxval="u25" onclick="ctxChipClick(this)">U2.5</button>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label">Grade</span>
+            <button class="ctx-chip active" data-ctxgroup="grade" data-ctxval="all" onclick="ctxChipClick(this)">All</button>
+            <button class="ctx-chip" data-ctxgroup="grade" data-ctxval="A+" onclick="ctxChipClick(this)">A+</button>
+            <button class="ctx-chip" data-ctxgroup="grade" data-ctxval="A" onclick="ctxChipClick(this)">A</button>
+            <button class="ctx-chip" data-ctxgroup="grade" data-ctxval="B" onclick="ctxChipClick(this)">B</button>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label">Result</span>
+            <button class="ctx-chip active" data-ctxgroup="result" data-ctxval="all" onclick="ctxChipClick(this)">All</button>
+            <button class="ctx-chip" data-ctxgroup="result" data-ctxval="won" onclick="ctxChipClick(this)">Won</button>
+            <button class="ctx-chip" data-ctxgroup="result" data-ctxval="lost" onclick="ctxChipClick(this)">Lost</button>
+          </div>
+        </div>
+
+        <div class="ctx-filter-row">
+          <span class="filter-label">Flags (AND)</span>
+          <div class="ctx-flag-checks" id="ctxFlagChecks"></div>
+        </div>
+
+        <div class="ctx-filter-row">
+          <span class="filter-label">Gameweek</span>
+          <div class="ctx-gw-wrap">
+            <span style="font-size:12px;color:#66758c">From</span>
+            <input type="range" class="ctx-gw-slider" id="ctxGwMin" min="1" max="38" value="1" oninput="ctxGwChange()">
+            <span style="font-size:12px;color:#66758c">To</span>
+            <input type="range" class="ctx-gw-slider" id="ctxGwMax" min="1" max="38" value="38" oninput="ctxGwChange()">
+            <span id="ctxGwDisplay" style="font-size:12px;color:#94a3b8;min-width:80px">GW 1 – 38</span>
+          </div>
+        </div>
+
+        <div class="ctx-count" id="ctxFilterCount">Loading...</div>
+      </div>
+
+      <!-- Flag performance table -->
+      <div class="ctx-panel">
+        <div id="ctxFlagTable"><div style="color:#66758c;font-size:13px">Loading flag data...</div></div>
+      </div>
+
+      <!-- Charts row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="ctx-panel">
+          <div id="ctxGwChart" class="ctx-chart-wrap"></div>
+        </div>
+        <div class="ctx-panel">
+          <div id="ctxEdgeChart" class="ctx-chart-wrap"></div>
+        </div>
+      </div>
+
+      <!-- Predictions table -->
+      <div class="ctx-panel" style="padding:0;overflow:hidden">
+        <div style="padding:16px 20px 10px;border-bottom:1px solid rgba(255,255,255,.06)">
+          <div class="ctx-panel-head" style="margin-bottom:0">Predictions</div>
+        </div>
+        <div style="overflow-x:auto">
+          <div id="ctxTableWrap"></div>
+        </div>
+      </div>
+
+      <!-- Phase note -->
+      <div class="ctx-phase-note">
+        <div class="ctx-phase-dot"></div>
+        <div>
+          <strong>context_raw — Diagnostic model (Stage 3 complete).</strong>
+          Uses last-6-match rolling stats only. Model is uncalibrated — mean edge overstates real edge.
+          ROI and CLV will improve after context_calibrated (Stage 10). Use this view for signal research,
+          not deployment decisions. Deployment gated on Stage 8 validation framework.
+        </div>
+      </div>
+
+    </div><!-- /ctxContent -->
+  </div><!-- /contextPanel -->
+
+  <!-- ── Detail drawer (context research) ── -->
+  <div id="ctxDrawerOverlay" onclick="closeCtxDrawer()"></div>
+  <div id="ctxDrawer">
+    <div id="ctxDrawerBody"></div>
+  </div>
+
   <div class="footer">
     <span>Data: <a href="https://www.soccerstats.com" target="_blank">SoccerSTATS</a> · Odds: <a href="https://the-odds-api.com" target="_blank">The-Odds-API</a> · Not betting advice.</span>
     <span>GoalScout v3 · Melbourne AEST</span>
@@ -253,7 +569,6 @@ function parseKickoffParts(kickoff) {
 }
 
 function deriveKickoffDate(m) {
-  // Odds API commenceTime is a proper UTC timestamp — trust it directly.
   if (m.odds && m.odds.commenceTime) {
     return new Date(m.odds.commenceTime);
   }
@@ -263,9 +578,6 @@ function deriveKickoffDate(m) {
 
   var now = getMelbourneNow();
 
-  // SoccerSTATS displays kickoff times in AEDT (UTC+11) regardless of DST.
-  // Subtract 1 hour to convert to current Melbourne time (AEST = UTC+10).
-  // The % 24 handles the midnight edge case (00:xx → 23:xx previous hour).
   var h = (kp.hour - 1 + 24) % 24;
   var d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, kp.minute, 0, 0);
 
@@ -278,10 +590,6 @@ function deriveKickoffDate(m) {
 
   if (dayLabel === 'today') {
     var minsAgo = (now.getTime() - d.getTime()) / 60000;
-    // Only shift to tomorrow if the kickoff was more than 3 hours ago.
-    // Matches in-progress or recently started stay on today's date.
-    // Early AEST kickoffs for the next calendar day (e.g. 01:00 Finnish)
-    // appear as 18+ hours "ago" and are correctly shifted to tomorrow.
     if (minsAgo > 180) {
       d.setDate(d.getDate() + 1);
     }
@@ -301,7 +609,6 @@ function fmtKickoff(m) {
       timeZone: 'Australia/Melbourne'
     });
   }
-
   if (!m.kickoff) return '—';
   return m.kickoff;
 }
@@ -316,7 +623,6 @@ function fmtDate(m) {
       timeZone: 'Australia/Melbourne'
     });
   }
-
   return m.day || '—';
 }
 
@@ -324,11 +630,7 @@ function getActiveShortlist() {
   if (filters.method === 'current') return shortlistData.current || [];
   if (filters.method === 'calibrated') return shortlistData.calibrated || [];
 
-  // Key by fixture+direction so BOTH rows show when models disagree on direction.
-  // If both models agree on direction (same fixture+direction), show once,
-  // preferring whichever has odds data.
   const map = new Map();
-
   const combined = [
     ...(shortlistData.current || []),
     ...(shortlistData.calibrated || [])
@@ -341,7 +643,6 @@ function getActiveShortlist() {
     if (!existing) {
       map.set(key, m);
     } else {
-      // Same fixture+direction from both models — prefer the one with odds
       const hasOdds = m.odds && (m.odds.o25 || m.odds.u25);
       const existingHasOdds = existing.odds && (existing.odds.o25 || existing.odds.u25);
       if (!existingHasOdds && hasOdds) {
@@ -568,7 +869,7 @@ function buildMatchRow(m, i) {
     ? '<span class="dir-badge dir-u25">U2.5</span>'
     : '<span class="dir-badge dir-o25">O2.5</span>';
 
-  var oddsData = isU25 ? m.odds?.u25 : m.odds?.o25;
+  oddsData = isU25 ? m.odds?.u25 : m.odds?.o25;
   var oddsHtml = '<span style="color:#66758c;font-size:12px;font-style:italic">No odds</span>';
   if (oddsData) {
     var cls = isU25 ? 'odds-box-u25' : 'odds-box';
@@ -752,10 +1053,12 @@ async function pollUntilDone() {
 function switchTab(tab) {
   document.getElementById('tabShortlist').classList.toggle('active', tab === 'shortlist');
   document.getElementById('tabPerf').classList.toggle('active', tab === 'perf');
-  var isSL = tab === 'shortlist';
-  document.getElementById('shortlistPanel').style.display = isSL ? '' : 'none';
-  document.getElementById('perfPanel').style.display = isSL ? 'none' : '';
-  if (!isSL) loadPerformance();
+  document.getElementById('tabContext').classList.toggle('active', tab === 'context');
+  document.getElementById('shortlistPanel').style.display = tab === 'shortlist' ? '' : 'none';
+  document.getElementById('perfPanel').style.display     = tab === 'perf'      ? '' : 'none';
+  document.getElementById('contextPanel').style.display  = tab === 'context'   ? '' : 'none';
+  if (tab === 'perf')     loadPerformance();
+  if (tab === 'context')  initContextResearch();
 }
 
 // ── Settle ────────────────────────────────────────────────────
@@ -820,7 +1123,6 @@ function renderPerformance(d) {
   const methodData = d.methods?.[statsMethod] || current;
   const comparison = d.comparison?.overlap || { both: 0, current_only: 0, calibrated_only: 0 };
 
-  // Shared summary strip — visible on both method tabs
   const summaryCards = [
     {
       label: 'Current',
@@ -955,7 +1257,7 @@ function renderPerfTable(all) {
       <td style="text-align:center;color:#67e8f9;font-weight:700">${resultScore}</td>
       <td style="text-align:center">${resultBadge}</td>
     </tr>`;
-  }).join('');  
+  }).join('');
 }
 
 // ── Init ──────────────────────────────────────────────────────
@@ -964,7 +1266,6 @@ async function init() {
   await loadShortlist();
   if (s === 'running') pollUntilDone();
 
-  // Seed trackers from first load so first poll tick doesn't trigger spurious reloads
   var _lastRefresh = null;
   var _lastSettlementChange = null;
 
@@ -991,6 +1292,746 @@ async function init() {
   }, 30000);
 }
 init();
+
+// ═══════════════════════════════════════════════════════════════
+// CONTEXT RESEARCH
+// ═══════════════════════════════════════════════════════════════
+
+// ── Constants ─────────────────────────────────────────────────
+var FLAG_META = {
+  strong_two_sided_over:    { key: 'strong_two_sided_over',    label: 'Strong Two-Sided Over',   abbr: 'STO',  role: 'attractor',  expected: '↑ O2.5' },
+  both_leaky_defence:       { key: 'both_leaky_defence',       label: 'Both Leaky Defence',       abbr: 'BLD',  role: 'attractor',  expected: '↑ O2.5' },
+  concede_driven_over:      { key: 'concede_driven_over',      label: 'Concede Driven Over',      abbr: 'CDO',  role: 'suppressor', expected: '↓ O2.5' },
+  one_sided_over_risk:      { key: 'one_sided_over_risk',      label: 'One-Sided Over Risk',      abbr: 'OSIR', role: 'suppressor', expected: '↓ O2.5' },
+  low_attack_under_support: { key: 'low_attack_under_support', label: 'Low Attack Under Support', abbr: 'LAUS', role: 'suppressor', expected: '↓ O2.5' },
+  both_weak_attack:         { key: 'both_weak_attack',         label: 'Both Weak Attack',         abbr: 'BWA',  role: 'suppressor', expected: '↓ O2.5' },
+};
+
+// ── State ─────────────────────────────────────────────────────
+var ctxState = {
+  allRows:       [],
+  settled:       [],
+  filtered:      [],
+  index:         null,
+  loaded:        false,
+  loading:       false,
+  currentLeague: 'england',
+  currentSeason: '2024_25',
+  page:          0,
+  pageSize:      50,
+  drawerRow:     null,
+  filters: {
+    direction: 'all',
+    grade:     'all',
+    result:    'all',
+    flags:     [],
+    gwMin:     1,
+    gwMax:     38,
+  },
+};
+
+// ── Init ──────────────────────────────────────────────────────
+async function initContextResearch() {
+  if (ctxState.loading) return;
+  if (ctxState.loaded) { renderCtx(); return; }
+
+  ctxState.loading = true;
+  document.getElementById('ctxLoading').style.display = 'block';
+  document.getElementById('ctxContent').style.display = 'none';
+
+  try {
+    // Load index metadata
+    var ir = await fetch('/api/context/index');
+    ctxState.index = await ir.json();
+
+    // Load backtest rows
+    var br = await fetch('/api/context/backtest?league=' + ctxState.currentLeague + '&season=' + ctxState.currentSeason);
+    if (!br.ok) throw new Error('Backtest not found: ' + br.status);
+    ctxState.allRows = await br.json();
+    ctxState.settled = ctxState.allRows.filter(function(r) { return r.status === 'settled'; });
+
+    ctxState.loaded  = true;
+    ctxState.loading = false;
+
+    // Set gameweek slider max from actual data — inferGameweek can produce
+    // values beyond 38 for long seasons (EPL 2024-25 ran to GW41 in calendar weeks)
+    var maxGw = Math.max.apply(null, ctxState.settled.map(function(r) { return r.gameweek || 0; }));
+    if (maxGw > 1) {
+      ctxState.filters.gwMax = maxGw;
+      var minEl = document.getElementById('ctxGwMin');
+      var maxEl = document.getElementById('ctxGwMax');
+      if (minEl) { minEl.max = maxGw; }
+      if (maxEl) { maxEl.max = maxGw; maxEl.value = maxGw; }
+    }
+
+    // Build flag checkboxes now that we have data
+    buildFlagCheckboxes();
+    applyCtxFilters();
+    renderCtx();
+
+    document.getElementById('ctxLoading').style.display = 'none';
+    document.getElementById('ctxContent').style.display = 'block';
+  } catch (e) {
+    ctxState.loading = false;
+    document.getElementById('ctxLoading').textContent = '⚠ Failed to load research data: ' + e.message;
+    console.error('[ctx] load error:', e);
+  }
+}
+
+function buildFlagCheckboxes() {
+  var wrap = document.getElementById('ctxFlagChecks');
+  if (!wrap) return;
+  wrap.innerHTML = Object.values(FLAG_META).map(function(meta) {
+    return '<label class="ctx-flag-check-label">' +
+      '<input type="checkbox" value="' + meta.key + '" onchange="ctxFlagCheck(\'' + meta.key + '\', this.checked)">' +
+      meta.abbr +
+    '</label>';
+  }).join('');
+}
+
+// ── Filter application ────────────────────────────────────────
+function applyCtxFilters() {
+  var f = ctxState.filters;
+  ctxState.filtered = ctxState.settled.filter(function(r) {
+    if (f.direction !== 'all' && r.context_direction !== f.direction) return false;
+    if (f.grade !== 'all' && r.context_grade !== f.grade) return false;
+    if (f.result === 'won'  && r.won !== true)  return false;
+    if (f.result === 'lost' && r.won !== false) return false;
+    if (r.gameweek < f.gwMin || r.gameweek > f.gwMax) return false;
+    if (f.flags.length > 0) {
+      for (var i = 0; i < f.flags.length; i++) {
+        var flag = f.flags[i];
+        if (flag === 'concede_driven_over') {
+          if (!r.flags || (!r.flags.concede_driven_over_home && !r.flags.concede_driven_over_away)) return false;
+        } else {
+          if (!r.flags || !r.flags[flag]) return false;
+        }
+      }
+    }
+    return true;
+  });
+  ctxState.page = 0;
+}
+
+// ── Master render ─────────────────────────────────────────────
+function renderCtx() {
+  renderCtxSelector();
+  renderCtxCards();
+  renderCtxFilterBar();
+  renderFlagTable();
+  renderGwChart();
+  renderEdgeChart();
+  renderCtxTable();
+}
+
+// ── Selector strip ────────────────────────────────────────────
+function renderCtxSelector() {
+  var idx = ctxState.index;
+  var meta = '';
+  if (idx && idx.leagues && idx.leagues.length > 0) {
+    var entry = idx.leagues.find(function(l) {
+      return l.league === ctxState.currentLeague &&
+             l.season.replace('-', '_') === ctxState.currentSeason;
+    }) || idx.leagues[0];
+    if (entry) {
+      meta = entry.predictions + ' of ' + entry.fixtures + ' fixtures predicted · model ' +
+             entry.modelVersion + ' · features ' + entry.featureSetVersion;
+    }
+  }
+  var el = document.getElementById('ctxSelectorMeta');
+  if (el) el.textContent = meta;
+}
+
+// ── Headline cards ────────────────────────────────────────────
+function renderCtxCards() {
+  var rows  = ctxState.filtered;
+  var total = rows.length;
+  var won   = rows.filter(function(r) { return r.won === true; }).length;
+  var o25   = rows.filter(function(r) { return r.context_direction === 'o25'; });
+  var u25   = rows.filter(function(r) { return r.context_direction === 'u25'; });
+  var o25w  = o25.filter(function(r) { return r.won === true; }).length;
+  var u25w  = u25.filter(function(r) { return r.won === true; }).length;
+
+  var roiRows = rows.filter(function(r) { return r.marketOdds != null && r.won !== null; });
+  var pnl = roiRows.reduce(function(s, r) { return s + (r.won ? (r.marketOdds - 1) : -1); }, 0);
+  var roi = roiRows.length > 0 ? (pnl / roiRows.length * 100) : null;
+
+  var clvRows = rows.filter(function(r) { return r.clv_pct != null; });
+  var meanCLV = clvRows.length > 0
+    ? clvRows.reduce(function(s, r) { return s + r.clv_pct; }, 0) / clvRows.length
+    : null;
+
+  function hr(n, d) { return d > 0 ? Math.round(n / d * 1000) / 10 : null; }
+  function hrStr(n, d) { var v = hr(n, d); return v != null ? v + '%' : '—'; }
+  function hrCol(v) { return v == null ? '#66758c' : v >= 57 ? '#6ee7b7' : v >= 52 ? '#fbbf24' : '#f87171'; }
+
+  var hitR  = hr(won, total);
+  var o25R  = hr(o25w, o25.length);
+  var u25R  = hr(u25w, u25.length);
+  var pnlStr = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+
+  var cards = [
+    { label: 'Hit Rate', val: hrStr(won, total),       sub: won + ' / ' + total,             color: hrCol(hitR) },
+    { label: 'O2.5',     val: hrStr(o25w, o25.length), sub: o25w + ' / ' + o25.length,       color: hrCol(o25R) },
+    { label: 'U2.5',     val: hrStr(u25w, u25.length), sub: u25w + ' / ' + u25.length,       color: hrCol(u25R) },
+    {
+      label: 'ROI',
+      val: roi != null ? (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%' : '—',
+      sub: roiRows.length > 0 ? pnlStr + 'u · ' + roiRows.length + ' bets' : '—',
+      color: roi != null ? (roi >= 2 ? '#6ee7b7' : roi >= -2 ? '#fbbf24' : '#f87171') : '#66758c',
+      tip: 'Model is uncalibrated — ROI gap expected until context_calibrated (Stage 10).',
+    },
+    {
+      label: 'Mean CLV',
+      val: meanCLV != null ? (meanCLV >= 0 ? '+' : '') + meanCLV.toFixed(2) + '%' : '—',
+      sub: clvRows.length + ' of ' + total + ' with closing odds',
+      color: meanCLV != null ? (meanCLV >= 1 ? '#6ee7b7' : meanCLV >= 0 ? '#fbbf24' : '#f87171') : '#66758c',
+    },
+  ];
+
+  document.getElementById('ctxCards').innerHTML = cards.map(function(c) {
+    return '<div class="perf-hero-cell">' +
+      '<div class="ph-label">' + c.label + (c.tip ? ' <span class="ctx-tip" title="' + c.tip + '" style="cursor:help">ⓘ</span>' : '') + '</div>' +
+      '<div class="ph-val" style="color:' + c.color + '">' + c.val + '</div>' +
+      '<div class="ph-sub">' + c.sub + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+// ── Filter bar update ─────────────────────────────────────────
+function renderCtxFilterBar() {
+  var f = ctxState.filters;
+  document.querySelectorAll('.ctx-chip[data-ctxgroup]').forEach(function(chip) {
+    chip.classList.toggle('active', f[chip.dataset.ctxgroup] === chip.dataset.ctxval);
+  });
+  var gwEl = document.getElementById('ctxGwDisplay');
+  if (gwEl) gwEl.textContent = 'GW ' + f.gwMin + ' – ' + f.gwMax;
+  var countEl = document.getElementById('ctxFilterCount');
+  if (countEl) countEl.textContent = 'Showing ' + ctxState.filtered.length + ' of ' + ctxState.settled.length + ' settled predictions';
+}
+
+// ── Filter event handlers ─────────────────────────────────────
+function ctxChipClick(chip) {
+  var group = chip.dataset.ctxgroup;
+  var val   = chip.dataset.ctxval;
+  ctxState.filters[group] = val;
+  applyCtxFilters();
+  renderCtxCards();
+  renderCtxFilterBar();
+  renderCtxTable();
+}
+
+function ctxFlagCheck(key, checked) {
+  var flags = ctxState.filters.flags;
+  if (checked) {
+    if (flags.indexOf(key) === -1) flags.push(key);
+  } else {
+    ctxState.filters.flags = flags.filter(function(f) { return f !== key; });
+  }
+  applyCtxFilters();
+  renderCtxCards();
+  renderCtxFilterBar();
+  renderCtxTable();
+}
+
+function ctxGwChange() {
+  var minEl = document.getElementById('ctxGwMin');
+  var maxEl = document.getElementById('ctxGwMax');
+  var minV  = parseInt(minEl.value);
+  var maxV  = parseInt(maxEl.value);
+  if (minV > maxV) { minEl.value = maxV; minV = maxV; }
+  ctxState.filters.gwMin = minV;
+  ctxState.filters.gwMax = maxV;
+  applyCtxFilters();
+  renderCtxCards();
+  renderCtxFilterBar();
+  renderGwChart();
+  renderCtxTable();
+}
+
+// ── Flag performance table ────────────────────────────────────
+function renderFlagTable() {
+  var rows   = ctxState.settled; // always all settled — never filtered
+  var o25all = rows.filter(function(r) { return r.context_direction === 'o25'; });
+
+  var html = '<div class="ctx-panel-head">Flag Performance' +
+    '<span style="color:#66758c;font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;margin-left:10px">' +
+    'Computed over all ' + ctxState.settled.length + ' settled predictions · not affected by above filters</span></div>' +
+    '<div style="overflow-x:auto"><table class="ctx-flag-table">' +
+    '<thead><tr>' +
+    '<th>Flag</th><th>Fired</th><th>Expected</th>' +
+    '<th>O2.5 hit (fired)</th><th>O2.5 hit (not fired)</th><th>Δ</th><th>Signal</th>' +
+    '</tr></thead><tbody>';
+
+  Object.values(FLAG_META).forEach(function(meta) {
+    var key = meta.key;
+    var fired;
+    if (key === 'concede_driven_over') {
+      fired = rows.filter(function(r) { return r.flags && (r.flags.concede_driven_over_home || r.flags.concede_driven_over_away); });
+    } else {
+      fired = rows.filter(function(r) { return r.flags && r.flags[key]; });
+    }
+    var notFired = rows.filter(function(r) { return fired.indexOf(r) === -1; });
+
+    var fO25  = fired.filter(function(r) { return r.context_direction === 'o25'; });
+    var fO25w = fO25.filter(function(r) { return r.won; }).length;
+    var nO25  = notFired.filter(function(r) { return r.context_direction === 'o25'; });
+    var nO25w = nO25.filter(function(r) { return r.won; }).length;
+
+    var fRate = fO25.length  > 0 ? fO25w  / fO25.length  * 100 : null;
+    var nRate = nO25.length  > 0 ? nO25w  / nO25.length  * 100 : null;
+    var delta = (fRate != null && nRate != null) ? fRate - nRate : null;
+    var isLowN = fired.length < 10;
+
+    var signal = '—', sigColor = '#66758c';
+    if (!isLowN && delta != null) {
+      var correct  = (meta.role === 'attractor' && delta > 2) || (meta.role === 'suppressor' && delta < -2);
+      var wrong    = (meta.role === 'attractor' && delta < -2) || (meta.role === 'suppressor' && delta > 2);
+      if (correct)    { signal = '✓'; sigColor = '#6ee7b7'; }
+      else if (wrong) { signal = '⚠'; sigColor = '#fbbf24'; }
+      else            { signal = '~'; sigColor = '#66758c'; }
+    }
+
+    var dStr  = delta != null ? (delta > 0 ? '+' : '') + delta.toFixed(1) + 'pp' : '—';
+    var dCol  = delta != null ? (delta > 2 ? '#6ee7b7' : delta < -2 ? '#f87171' : '#66758c') : '#66758c';
+
+    html += '<tr' + (isLowN ? ' style="opacity:.5"' : '') + '>' +
+      '<td>' + meta.label + (isLowN ? ' <span style="font-size:10px;color:#66758c">(low N)</span>' : '') + '</td>' +
+      '<td>' + fired.length + '</td>' +
+      '<td style="color:#94a3b8">' + meta.expected + '</td>' +
+      '<td>' + (fRate != null ? fRate.toFixed(1) + '%' : '—') + '</td>' +
+      '<td>' + (nRate != null ? nRate.toFixed(1) + '%' : '—') + '</td>' +
+      '<td style="color:' + dCol + ';font-weight:600">' + dStr + '</td>' +
+      '<td style="color:' + sigColor + ';font-weight:700;font-size:15px">' + signal + '</td>' +
+    '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('ctxFlagTable').innerHTML = html;
+}
+
+// ── Gameweek hit-rate chart ───────────────────────────────────
+function renderGwChart() {
+  var f    = ctxState.filters;
+  var rows = ctxState.settled.filter(function(r) {
+    return r.gameweek >= f.gwMin && r.gameweek <= f.gwMax;
+  });
+
+  var gwData = {};
+  rows.forEach(function(r) {
+    var gw = r.gameweek || 0;
+    if (!gwData[gw]) gwData[gw] = { won: 0, total: 0 };
+    gwData[gw].total++;
+    if (r.won) gwData[gw].won++;
+  });
+
+  var gws = Object.keys(gwData).map(Number).sort(function(a, b) { return a - b; });
+  var el  = document.getElementById('ctxGwChart');
+
+  if (!gws.length) {
+    el.innerHTML = '<div class="ctx-panel-head">Hit Rate by Gameweek</div><div style="text-align:center;color:#66758c;padding:2rem;font-size:12px">No data for selected range</div>';
+    return;
+  }
+
+  var totalWon   = rows.filter(function(r) { return r.won; }).length;
+  var seasonAvg  = rows.length > 0 ? totalWon / rows.length : 0;
+  var maxGw      = Math.max.apply(null, gws);
+  var W = 620, H = 150, PL = 34, PR = 28, PT = 14, PB = 26;
+  var CW = W - PL - PR, CH = H - PT - PB;
+  var slotW = CW / Math.max(maxGw, 1);
+  var barW  = Math.max(3, Math.min(14, Math.floor(slotW) - 3));
+  var avgY  = PT + CH * (1 - seasonAvg);
+
+  var yTicks = [0, 25, 50, 75, 100];
+  var xLabels = gws.filter(function(gw) { return gw === 1 || gw % 5 === 0 || gw === maxGw; });
+  var maxVol = Math.max.apply(null, gws.map(function(gw) { return gwData[gw].total; }));
+
+  var gridLines = yTicks.map(function(pct) {
+    var y = PT + CH * (1 - pct / 100);
+    return '<line x1="' + PL + '" y1="' + y + '" x2="' + (W - PR) + '" y2="' + y + '" stroke="' +
+      (pct === 50 ? '#3d4f6a' : '#1a2535') + '" stroke-width="' + (pct === 50 ? 1.2 : 0.5) + '"' +
+      (pct === 50 ? ' stroke-dasharray="4,3"' : '') + '/>' +
+      '<text x="' + (PL - 4) + '" y="' + (y + 4) + '" text-anchor="end" fill="#44576e" font-size="9">' + pct + '%</text>';
+  }).join('');
+
+  var bars = gws.map(function(gw) {
+    var d    = gwData[gw];
+    var rate = d.total > 0 ? d.won / d.total : null;
+    var x    = PL + (gw - 0.5) / maxGw * CW - barW / 2;
+    var bH   = rate != null ? rate * CH : 0;
+    var y    = PT + CH - bH;
+    var col  = rate == null ? '#1e2d3d'
+             : rate >= seasonAvg + 0.05 ? '#34d399'
+             : rate >= seasonAvg - 0.05 ? '#fbbf24' : '#f87171';
+    var volH = maxVol > 0 ? d.total / maxVol * 11 : 0;
+    var volY = H - PB - volH;
+    return '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + bH + '" fill="' + col + '" opacity=".7" rx="2">' +
+        '<title>GW' + gw + ': ' + (rate != null ? Math.round(rate * 100) : '—') + '% (' + d.total + ' preds)</title>' +
+      '</rect>' +
+      '<rect x="' + x + '" y="' + volY + '" width="' + barW + '" height="' + volH + '" fill="#2a3f5f" opacity=".8" rx="1">' +
+        '<title>GW' + gw + ': ' + d.total + ' predictions</title>' +
+      '</rect>';
+  }).join('');
+
+  var xAxisLabels = xLabels.map(function(gw) {
+    var x = PL + (gw - 0.5) / maxGw * CW;
+    return '<text x="' + x + '" y="' + (H - 4) + '" text-anchor="middle" fill="#44576e" font-size="9">' + gw + '</text>';
+  }).join('');
+
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:' + H + 'px">' +
+    gridLines +
+    '<line x1="' + PL + '" y1="' + avgY + '" x2="' + (W - PR) + '" y2="' + avgY + '" stroke="#818cf8" stroke-width="1" stroke-dasharray="5,3" opacity=".65"/>' +
+    '<text x="' + (W - PR + 2) + '" y="' + (avgY + 4) + '" fill="#818cf8" font-size="9" opacity=".65">' + Math.round(seasonAvg * 100) + '%</text>' +
+    bars + xAxisLabels +
+  '</svg>';
+
+  el.innerHTML = '<div class="ctx-panel-head">Hit Rate by Gameweek</div>' +
+    '<div style="color:#44576e;font-size:11px;margin-bottom:6px">Green = above avg · Amber = near avg · Red = below avg · Purple dashed = season avg · Bottom strip = volume</div>' + svg;
+}
+
+// ── Edge vs outcome chart ─────────────────────────────────────
+function renderEdgeChart() {
+  var rows = ctxState.settled.filter(function(r) { return r.edge_pct != null && r.won !== null; });
+  var el   = document.getElementById('ctxEdgeChart');
+
+  var buckets = [
+    { label: '< 0%',   min: -Infinity, max: 0   },
+    { label: '0–5%',   min: 0,         max: 5   },
+    { label: '5–10%',  min: 5,         max: 10  },
+    { label: '10–15%', min: 10,        max: 15  },
+    { label: '15–20%', min: 15,        max: 20  },
+    { label: '20–25%', min: 20,        max: 25  },
+    { label: '25%+',   min: 25,        max: Infinity },
+  ];
+
+  var bData = buckets.map(function(b) {
+    var br  = rows.filter(function(r) { return r.edge_pct >= b.min && r.edge_pct < b.max; });
+    var won = br.filter(function(r) { return r.won; }).length;
+    return { label: b.label, total: br.length, won: won, rate: br.length > 0 ? won / br.length * 100 : null };
+  }).filter(function(b) { return b.total > 0; });
+
+  if (!bData.length) {
+    el.innerHTML = '<div class="ctx-panel-head">Edge vs Outcome</div><div style="text-align:center;color:#66758c;padding:2rem;font-size:12px">No edge data</div>';
+    return;
+  }
+
+  var totalWon  = rows.filter(function(r) { return r.won; }).length;
+  var seasonAvg = rows.length > 0 ? totalWon / rows.length * 100 : 50;
+  var W = 420, H = 150, PL = 34, PR = 14, PT = 14, PB = 26;
+  var CW = W - PL - PR, CH = H - PT - PB;
+  var bCount = bData.length;
+  var barW   = Math.floor(CW / bCount) - 8;
+  var avgY   = PT + CH * (1 - seasonAvg / 100);
+
+  var yTicks  = [0, 25, 50, 75, 100];
+  var gridLines = yTicks.map(function(pct) {
+    var y = PT + CH * (1 - pct / 100);
+    return '<line x1="' + PL + '" y1="' + y + '" x2="' + (W - PR) + '" y2="' + y + '" stroke="' +
+      (pct === 50 ? '#3d4f6a' : '#1a2535') + '" stroke-width="' + (pct === 50 ? 1.2 : 0.5) + '"' +
+      (pct === 50 ? ' stroke-dasharray="4,3"' : '') + '/>' +
+      '<text x="' + (PL - 4) + '" y="' + (y + 4) + '" text-anchor="end" fill="#44576e" font-size="9">' + pct + '%</text>';
+  }).join('');
+
+  var bars = bData.map(function(b, i) {
+    if (b.rate == null) return '';
+    var x   = PL + i * (CW / bCount) + (CW / bCount - barW) / 2;
+    var bH  = b.rate / 100 * CH;
+    var y   = PT + CH - bH;
+    var col = b.total < 5 ? '#2a3448'
+            : b.rate >= seasonAvg + 5 ? '#34d399'
+            : b.rate >= seasonAvg - 5 ? '#fbbf24' : '#f87171';
+    var cx  = x + barW / 2;
+    var nY  = Math.max(y - 3, PT + 10);
+    return '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + bH + '" fill="' + col +
+        '" opacity="' + (b.total < 5 ? '.35' : '.75') + '" rx="2">' +
+        '<title>' + b.label + ': ' + b.rate.toFixed(1) + '% (n=' + b.total + ')</title></rect>' +
+      '<text x="' + cx + '" y="' + nY + '" text-anchor="middle" fill="#44576e" font-size="8">n=' + b.total + '</text>' +
+      '<text x="' + cx + '" y="' + (H - 4) + '" text-anchor="middle" fill="#44576e" font-size="8">' + b.label + '</text>';
+  }).join('');
+
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:' + H + 'px">' +
+    gridLines +
+    '<line x1="' + PL + '" y1="' + avgY + '" x2="' + (W - PR) + '" y2="' + avgY + '" stroke="#818cf8" stroke-width="1" stroke-dasharray="5,3" opacity=".65"/>' +
+    bars +
+  '</svg>';
+
+  el.innerHTML = '<div class="ctx-panel-head">Edge vs Outcome</div>' +
+    '<div style="color:#44576e;font-size:11px;margin-bottom:6px">Upward slope = edge ranking is meaningful. Flat = calibration needed. Purple = avg hit rate.</div>' + svg;
+}
+
+// ── Predictions table ─────────────────────────────────────────
+function renderCtxTable() {
+  var rows      = ctxState.filtered;
+  var pageSize  = ctxState.pageSize;
+  var page      = ctxState.page;
+  var total     = rows.length;
+  var totalPages = Math.ceil(total / pageSize);
+  var pageRows  = rows.slice(page * pageSize, (page + 1) * pageSize);
+
+  var countEl = document.getElementById('ctxFilterCount');
+  if (countEl) countEl.textContent = 'Showing ' + total + ' of ' + ctxState.settled.length + ' settled predictions';
+
+  if (!pageRows.length) {
+    document.getElementById('ctxTableWrap').innerHTML =
+      '<div style="text-align:center;padding:2rem;color:#66758c;font-size:13px">No predictions match these filters.</div>';
+    return;
+  }
+
+  var tbody = pageRows.map(function(r, i) {
+    var globalIdx = page * pageSize + i;
+    var isO25 = r.context_direction === 'o25';
+
+    var dirBadge = isO25
+      ? '<span class="dir-badge dir-o25" style="font-size:10px;padding:3px 7px">O2.5</span>'
+      : '<span class="dir-badge dir-u25" style="font-size:10px;padding:3px 7px">U2.5</span>';
+
+    var gradeBadge = '<span class="badge ' + gradeClass(r.context_grade) + '" style="font-size:10px;padding:3px 7px">' + (r.context_grade || '—') + '</span>';
+
+    // Compact flag pills
+    var flagPills = '';
+    Object.values(FLAG_META).forEach(function(meta) {
+      var fired = meta.key === 'concede_driven_over'
+        ? (r.flags && (r.flags.concede_driven_over_home || r.flags.concede_driven_over_away))
+        : (r.flags && r.flags[meta.key]);
+      if (fired) {
+        flagPills += '<span title="' + meta.label + '" style="display:inline-block;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.05);border-radius:5px;padding:1px 5px;font-size:9px;color:#94a3b8;margin:1px">' + meta.abbr + '</span>';
+      }
+    });
+    if (!flagPills) flagPills = '<span style="color:#2d3f57;font-size:10px">—</span>';
+
+    var edgeStr = r.edge_pct != null
+      ? '<span style="color:' + edgeColor(r.edge_pct) + ';font-size:12px">' + (r.edge_pct > 0 ? '+' : '') + r.edge_pct.toFixed(1) + '%</span>'
+      : '<span style="color:#2d3f57">—</span>';
+
+    var clvStr = r.clv_pct != null
+      ? '<span style="color:' + clvColor(r.clv_pct) + ';font-size:12px">' + (r.clv_pct > 0 ? '+' : '') + r.clv_pct.toFixed(1) + '%</span>'
+      : '<span style="color:#2d3f57">—</span>';
+
+    var wonHtml = r.won === true  ? '<span style="color:#6ee7b7;font-weight:700">✓</span>'
+                : r.won === false ? '<span style="color:#f87171;font-weight:700">✗</span>'
+                : '<span style="color:#2d3f57">—</span>';
+
+    var result = r.fullTimeHome != null ? r.fullTimeHome + '–' + r.fullTimeAway : '—';
+    var odds   = r.marketOdds != null
+      ? '<span style="color:#c4b5fd;font-size:12px">' + r.marketOdds.toFixed(2) + '</span>'
+      : '<span style="color:#2d3f57">—</span>';
+
+    return '<tr style="cursor:pointer" onclick="openCtxDrawer(ctxState.filtered[' + globalIdx + '])">' +
+      '<td style="color:#66758c;font-size:11px">' + (r.gameweek || '—') + '</td>' +
+      '<td style="color:#66758c;font-size:11px;white-space:nowrap">' + (r.fixtureDate || '—') + '</td>' +
+      '<td style="font-size:12px;white-space:nowrap">' + r.homeTeam + ' <span style="color:#3d4f6a">vs</span> ' + r.awayTeam + '</td>' +
+      '<td>' + dirBadge + '</td>' +
+      '<td>' + gradeBadge + '</td>' +
+      '<td style="max-width:110px">' + flagPills + '</td>' +
+      '<td style="text-align:right;color:#66758c;font-size:12px">' + (r.context_fair_odds ? r.context_fair_odds.toFixed(2) : '—') + '</td>' +
+      '<td style="text-align:right">' + odds + '</td>' +
+      '<td style="text-align:right">' + edgeStr + '</td>' +
+      '<td style="text-align:right">' + clvStr + '</td>' +
+      '<td style="text-align:center;color:#67e8f9;font-size:12px;font-weight:600">' + result + '</td>' +
+      '<td style="text-align:center">' + wonHtml + '</td>' +
+    '</tr>';
+  }).join('');
+
+  var pagination = totalPages > 1
+    ? '<div class="ctx-pagination">' +
+        '<button class="ctx-page-btn" onclick="ctxPageNav(-1)"' + (page === 0 ? ' disabled' : '') + '>← Prev</button>' +
+        '<span style="color:#66758c;font-size:12px">Page ' + (page + 1) + ' of ' + totalPages + '</span>' +
+        '<button class="ctx-page-btn" onclick="ctxPageNav(1)"' + (page >= totalPages - 1 ? ' disabled' : '') + '>Next →</button>' +
+      '</div>'
+    : '';
+
+  document.getElementById('ctxTableWrap').innerHTML =
+    '<table class="ctx-table">' +
+      '<thead><tr>' +
+        '<th>GW</th><th>Date</th><th>Match</th><th>Dir</th><th>Grade</th>' +
+        '<th>Flags</th>' +
+        '<th style="text-align:right">Fair</th><th style="text-align:right">Odds</th>' +
+        '<th style="text-align:right">Edge</th><th style="text-align:right">CLV</th>' +
+        '<th style="text-align:center">Score</th><th style="text-align:center">Won</th>' +
+      '</tr></thead>' +
+      '<tbody>' + tbody + '</tbody>' +
+    '</table>' + pagination;
+}
+
+function ctxPageNav(dir) {
+  var totalPages = Math.ceil(ctxState.filtered.length / ctxState.pageSize);
+  ctxState.page  = Math.max(0, Math.min(totalPages - 1, ctxState.page + dir));
+  renderCtxTable();
+  // Scroll table into view
+  var el = document.getElementById('ctxTableWrap');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Detail drawer ─────────────────────────────────────────────
+function openCtxDrawer(row) {
+  if (!row) return;
+  ctxState.drawerRow = row;
+  document.getElementById('ctxDrawerOverlay').style.display = 'block';
+  var drawer = document.getElementById('ctxDrawer');
+  drawer.style.display = 'block';
+  requestAnimationFrame(function() { drawer.classList.add('open'); });
+  document.getElementById('ctxDrawerBody').innerHTML = buildDrawerHTML(row);
+}
+
+function closeCtxDrawer() {
+  var drawer = document.getElementById('ctxDrawer');
+  drawer.classList.remove('open');
+  setTimeout(function() {
+    drawer.style.display = 'none';
+    document.getElementById('ctxDrawerOverlay').style.display = 'none';
+  }, 230);
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeCtxDrawer();
+});
+
+function ctxCopyId(id) {
+  navigator.clipboard && navigator.clipboard.writeText(id).catch(function() {});
+}
+
+function buildDrawerHTML(r) {
+  var isO25    = r.context_direction === 'o25';
+  var dirLabel = isO25 ? 'O2.5' : 'U2.5';
+  var won = r.won === true  ? '<span style="color:#6ee7b7;font-weight:700">✓ Won ' + dirLabel + '</span>'
+           : r.won === false ? '<span style="color:#f87171;font-weight:700">✗ Lost ' + dirLabel + '</span>'
+           : '—';
+
+  // Fired flags
+  var firedFlags = Object.values(FLAG_META).filter(function(meta) {
+    if (!r.flags) return false;
+    if (meta.key === 'concede_driven_over') return r.flags.concede_driven_over_home || r.flags.concede_driven_over_away;
+    return r.flags[meta.key];
+  });
+
+  var flagsHTML = firedFlags.length > 0
+    ? firedFlags.map(function(meta) {
+        var correct = (meta.role === 'attractor' && r.context_direction === 'o25') ||
+                      (meta.role === 'suppressor' && r.context_direction === 'u25');
+        var extra = '';
+        if (meta.key === 'concede_driven_over') {
+          var eff  = r.flags.concede_driven_over_effect;
+          var side = r.flags.concede_driven_over_fixture;
+          extra = ' · effect: ' + (eff >= 0 ? '+' : '') + eff + ' pts · side: ' + (side || '—');
+        }
+        return '<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)">' +
+          '<div style="font-size:12px;color:#e2e8f0;font-weight:500">' + (correct ? '✓' : '⚠') + ' ' + meta.label + extra + '</div>' +
+          '<div style="font-size:11px;color:#66758c;margin-top:2px">' + meta.expected + ' · ' + meta.role + ' · ' + (correct ? 'firing correctly' : 'unexpected direction') + '</div>' +
+        '</div>';
+      }).join('')
+    : '<div style="color:#66758c;font-size:12px">No flags fired</div>';
+
+  // Rolling inputs
+  var home = r.homeRolling || {};
+  var away = r.awayRolling || {};
+  var fields = [
+    ['gf_avg', 'gf avg'],
+    ['ga_avg', 'ga avg'],
+    ['fts_count', 'FTS count'],
+    ['scored2plus_count', 'scored 2+'],
+    ['conceded2plus_count', 'conceded 2+'],
+    ['o25_count', 'O2.5 count'],
+    ['games_available', 'games avail'],
+  ];
+  var inputRows = fields.map(function(pair) {
+    var field = pair[0], label = pair[1];
+    var hv = home[field] != null ? home[field] : '—';
+    var av = away[field] != null ? away[field] : '—';
+    return '<tr>' +
+      '<td style="color:#66758c;font-size:11px;padding:5px 0;width:50%">' + label + '</td>' +
+      '<td style="text-align:right;font-size:12px;color:#e2e8f0;padding:5px 10px">' + hv + '</td>' +
+      '<td style="text-align:right;font-size:12px;color:#e2e8f0;padding:5px 0">' + av + '</td>' +
+    '</tr>';
+  }).join('');
+
+  var probO25 = r.context_o25_prob_raw != null ? Math.round(r.context_o25_prob_raw * 100) + '%' : '—';
+  var probU25 = r.context_u25_prob_raw != null ? Math.round(r.context_u25_prob_raw * 100) + '%' : '—';
+  var fair    = r.context_fair_odds    != null ? r.context_fair_odds.toFixed(2) : '—';
+  var openO25 = r.marketOddsO25  != null ? r.marketOddsO25.toFixed(2)  : '—';
+  var openU25 = r.marketOddsU25  != null ? r.marketOddsU25.toFixed(2)  : '—';
+  var clsO25  = r.closingOddsO25 != null ? r.closingOddsO25.toFixed(2) : '—';
+  var clsU25  = r.closingOddsU25 != null ? r.closingOddsU25.toFixed(2) : '—';
+  var edgeStr = r.edge_pct != null ? (r.edge_pct > 0 ? '+' : '') + r.edge_pct.toFixed(2) + '%' : '—';
+  var clvStr  = r.clv_pct  != null ? (r.clv_pct  > 0 ? '+' : '') + r.clv_pct.toFixed(2)  + '%' : '—';
+  var pnlStr  = r.won === true  ? (r.marketOdds != null ? '+' + (r.marketOdds - 1).toFixed(2) + 'u' : '—')
+              : r.won === false ? '-1.00u' : '—';
+
+  function dRow(label, val, color) {
+    return '<tr><td style="font-size:11px;color:#66758c;padding:5px 0">' + label + '</td>' +
+           '<td style="text-align:right;font-size:12px;padding:5px 0' + (color ? ';color:' + color : '') + '">' + val + '</td></tr>';
+  }
+
+  return '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">' +
+    '<div>' +
+      '<div style="font-size:16px;font-weight:700;color:#e2e8f0;line-height:1.3">' + r.homeTeam + ' vs ' + r.awayTeam + '</div>' +
+      '<div style="font-size:11px;color:#66758c;margin-top:5px">' + (r.fixtureDate || '') + ' · GW ' + (r.gameweek || '—') + ' · ' + (r.league || 'England') + ' ' + (r.season || '') + '</div>' +
+    '</div>' +
+    '<button onclick="closeCtxDrawer()" style="background:none;border:none;color:#66758c;font-size:20px;cursor:pointer;padding:0;line-height:1;margin-left:12px;flex-shrink:0">✕</button>' +
+  '</div>' +
+
+  '<div style="font-size:9px;color:#2d3f57;font-family:\'JetBrains Mono\',monospace;margin-bottom:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+    r.fixtureId +
+    '<button onclick="ctxCopyId(\'' + r.fixtureId + '\')" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#44576e;border-radius:6px;padding:2px 8px;font-size:9px;cursor:pointer;font-family:inherit">Copy</button>' +
+  '</div>' +
+
+  '<div class="ctx-drawer-section">' +
+    '<div class="ctx-drawer-title">Prediction</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 8px">' +
+      '<div><div style="font-size:10px;color:#66758c;text-transform:uppercase;letter-spacing:.1em">Direction</div>' +
+        '<div style="margin-top:4px">' + (isO25 ? '<span class="dir-badge dir-o25">O2.5</span>' : '<span class="dir-badge dir-u25">U2.5</span>') + '</div></div>' +
+      '<div><div style="font-size:10px;color:#66758c;text-transform:uppercase;letter-spacing:.1em">Grade</div>' +
+        '<div style="margin-top:4px"><span class="badge ' + gradeClass(r.context_grade) + '">' + (r.context_grade || '—') + '</span></div></div>' +
+      '<div><div style="font-size:10px;color:#66758c;text-transform:uppercase;letter-spacing:.1em">O2.5 score</div>' +
+        '<div style="margin-top:4px;color:#e2e8f0;font-size:13px;font-weight:600">' + (r.context_o25_score != null ? r.context_o25_score : '—') + '</div></div>' +
+      '<div><div style="font-size:10px;color:#66758c;text-transform:uppercase;letter-spacing:.1em">U2.5 score</div>' +
+        '<div style="margin-top:4px;color:#e2e8f0;font-size:13px;font-weight:600">' + (r.context_u25_score != null ? r.context_u25_score : '—') + '</div></div>' +
+      '<div><div style="font-size:10px;color:#66758c;text-transform:uppercase;letter-spacing:.1em">P(O2.5)</div>' +
+        '<div style="margin-top:4px;color:#e2e8f0;font-size:13px;font-weight:600">' + probO25 + '</div></div>' +
+      '<div><div style="font-size:10px;color:#66758c;text-transform:uppercase;letter-spacing:.1em">P(U2.5)</div>' +
+        '<div style="margin-top:4px;color:#e2e8f0;font-size:13px;font-weight:600">' + probU25 + '</div></div>' +
+      '<div><div style="font-size:10px;color:#66758c;text-transform:uppercase;letter-spacing:.1em">Fair odds</div>' +
+        '<div style="margin-top:4px;color:#e2e8f0;font-size:13px;font-weight:600">' + fair + '</div></div>' +
+    '</div>' +
+  '</div>' +
+
+  '<div class="ctx-drawer-section">' +
+    '<div class="ctx-drawer-title">Result</div>' +
+    (r.totalGoals != null
+      ? '<div style="font-size:22px;font-weight:700;color:#e2e8f0;margin-bottom:8px">' +
+          r.fullTimeHome + ' – ' + r.fullTimeAway +
+          ' <span style="font-size:13px;color:#66758c;font-weight:400">(' + r.totalGoals + ' goals)</span></div>' +
+          '<div>' + won + '</div>'
+      : '<div style="color:#66758c;font-size:13px">Result not yet available</div>') +
+  '</div>' +
+
+  '<div class="ctx-drawer-section">' +
+    '<div class="ctx-drawer-title">Market</div>' +
+    '<table style="width:100%;border-collapse:collapse">' +
+      dRow('Opening O2.5 / U2.5', openO25 + ' / ' + openU25, '#c4b5fd') +
+      dRow('Closing O2.5 / U2.5', clsO25  + ' / ' + clsU25,  '#94a3b8') +
+      dRow('Edge',  edgeStr, edgeColor(r.edge_pct)) +
+      dRow('CLV',   clvStr,  clvColor(r.clv_pct)) +
+      dRow('P&L',   pnlStr,  r.won === true ? '#6ee7b7' : r.won === false ? '#f87171' : '#66758c') +
+    '</table>' +
+  '</div>' +
+
+  '<div class="ctx-drawer-section">' +
+    '<div class="ctx-drawer-title">Flags Fired</div>' +
+    flagsHTML +
+  '</div>' +
+
+  '<div class="ctx-drawer-section">' +
+    '<div class="ctx-drawer-title">Rolling Inputs (last 6 matches before kickoff)</div>' +
+    '<table style="width:100%;border-collapse:collapse">' +
+      '<thead><tr>' +
+        '<th style="text-align:left;font-size:10px;color:#66758c;padding:4px 0;font-weight:500;text-transform:uppercase;letter-spacing:.1em"></th>' +
+        '<th style="text-align:right;font-size:10px;color:#66758c;padding:4px 10px;font-weight:500">' + (r.homeTeam || 'Home') + '</th>' +
+        '<th style="text-align:right;font-size:10px;color:#66758c;padding:4px 0;font-weight:500">' + (r.awayTeam || 'Away') + '</th>' +
+      '</tr></thead>' +
+      '<tbody>' + inputRows + '</tbody>' +
+    '</table>' +
+  '</div>';
+}
 </script>
 </body>
 </html>
