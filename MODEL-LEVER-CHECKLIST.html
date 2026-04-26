@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GoalScout — Task Checklist</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #050b14; color: #e2e8f0; margin: 0; padding: 24px; }
+  h1 { color: #79f2bf; font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #70829d; font-size: 13px; margin-bottom: 32px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: #5aa7ff; margin: 28px 0 10px; }
+  .item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(166,195,255,.07); font-size: 14px; }
+  .item:last-child { border-bottom: none; }
+  .item input[type=checkbox] { margin-top: 2px; accent-color: #79f2bf; width: 15px; height: 15px; flex-shrink: 0; cursor: pointer; }
+  .item label { cursor: pointer; line-height: 1.5; }
+  .item.done label { color: #70829d; text-decoration: line-through; }
+  .note { font-size: 12px; color: #5aa7ff; margin-top: 2px; }
+  .warn { font-size: 12px; color: #ffca57; margin-top: 2px; }
+  .tag { font-size: 10px; border-radius: 4px; padding: 1px 6px; margin-left: 6px; font-weight: 600; }
+  .tag-done { background: rgba(121,242,191,.15); color: #79f2bf; }
+  .tag-now { background: rgba(255,202,87,.15); color: #ffca57; }
+  .tag-soon { background: rgba(90,167,255,.15); color: #5aa7ff; }
+  .tag-phase2 { background: rgba(181,150,255,.15); color: #b596ff; }
+</style>
+</head>
+<body>
+
+<h1>GoalScout — Task Checklist</h1>
+<div class="sub">Updated April 25 2026 · Branch: fix/settlement-validation</div>
+
+<!-- ── COMPLETED ── -->
+<h2>Completed</h2>
+
+<div class="item done">
+  <input type="checkbox" checked id="t1"><label for="t1">Away stats column offset fix (match-discovery.js — all 8 away fields were reading one column early) <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t2"><label for="t2">Team name normaliser shared module (team-names.js) <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t3"><label for="t3">Directional O2.5/U2.5 scoring model with threshold tuning <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t4"><label for="t4">Dual model (current + calibrated) with independent prediction pools <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t5"><label for="t5">history.js market/direction reconciliation — fixed U2.5 rows appearing in O2.5 tab <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t6"><label for="t6">Move% colour inversion fix — positive Move% now correctly shown as red (odds drifted = bad) <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t7"><label for="t7">Move% formula fix — (preKO / tipOdds - 1) so negative = shortened = good <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t8"><label for="t8">Disk-persistent odds cache (in-memory + data/odds-cache.json) — survives container restarts <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t9"><label for="t9">Settlement pipeline — Odds API /scores primary, Football-Data.org validator/fallback <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t10"><label for="t10">resultSource field on all settlements (verified / odds-api / football-data) <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t11"><label for="t11">settlement-conflicts.jsonl logging + /api/conflicts endpoint <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t12"><label for="t12">Kickoff proximity guard on Odds API score matching (48h window — prevents double-leg collisions) <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t13"><label for="t13">30-minute settlement sweep cron — automatic settlement without manual trigger <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t14"><label for="t14">135-minute eligibility guard — settler skips predictions where kickoff was less than 135 min ago <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t15"><label for="t15">outside_odds_api_window skip reason — Odds API /scores max daysFrom=3, confirmed and documented <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t16"><label for="t16">Grouped skip-reason counters in settler logs (future, not_old_enough, outside_window, no_candidate, etc.) <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t17"><label for="t17">lastSettlementChange in /api/status — updates only when data is written, not on empty sweeps <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t18"><label for="t18">Frontend polls /api/status every 30s — reloads shortlist on lastRefresh change, performance on lastSettlementChange change <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t19"><label for="t19">Stop copying preKickoffOdds into closingOdds — closingOdds now null unless genuinely captured <span class="tag tag-done">DONE</span></label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t20"><label for="t20">captureClosingOdds() — separate 5-minute cron, targets 3–15 min before KO, writes closingOdds + closingOddsCapturedAt only, never overwrites <span class="tag tag-done">DONE</span></label>
+</div>
+
+<!-- ── NOW / OUTSTANDING ── -->
+<h2>Now — Outstanding</h2>
+
+<div class="item">
+  <input type="checkbox" id="t21"><label for="t21">
+    Settle or void 8 orphaned predictions (April 19-21, outside Odds API window, not covered by FD)
+    <span class="tag tag-now">NOW</span>
+    <div class="warn">Poland, Argentina, Spain2, Russia — manually edit predictions.jsonl or accept data loss</div>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t22"><label for="t22">
+    Verify close capture works after tonight's matches — check logs for [close-capture] and inspect closingOddsCapturedAt on settled predictions
+    <span class="tag tag-now">NOW</span>
+    <div class="note">First real test of captureClosingOdds() in production</div>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t23"><label for="t23">
+    Merge fix/settlement-validation into main (or fix/data-integrity-fix) after tonight's verification
+    <span class="tag tag-now">NOW</span>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t24"><label for="t24">
+    Investigate leagueStatsFound: 0 in /api/status meta — league O2.5% weight is effectively zero for all predictions
+    <span class="tag tag-now">NOW</span>
+    <div class="warn">This means the ×0.10 League O2.5% model input is unused</div>
+  </label>
+</div>
+
+<!-- ── SOON ── -->
+<h2>Soon</h2>
+
+<div class="item">
+  <input type="checkbox" id="t25"><label for="t25">
+    Migrate resultSource: undefined on legacy settled records — backfill with 'odds-api' as default
+    <span class="tag tag-soon">SOON</span>
+    <div class="note">One-off script, ~20 lines</div>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t26"><label for="t26">
+    UI: surface conflict count — show banner in Performance tab if /api/conflicts count > 0
+    <span class="tag tag-soon">SOON</span>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t27"><label for="t27">
+    AU bookmaker filtering — only show Betfair/Sportsbet/Bet365 odds, not global book average
+    <span class="tag tag-soon">SOON</span>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t28"><label for="t28">
+    Calibration: begin tracking whether calibration.json is populated and which leagues have enough data
+    <span class="tag tag-soon">SOON</span>
+    <div class="note">Needs 200+ settled predictions per league — currently accumulating</div>
+  </label>
+</div>
+
+<!-- ── PHASE 2 ── -->
+<h2>Phase 2</h2>
+
+<div class="item">
+  <input type="checkbox" id="t29"><label for="t29">
+    xG data integration — replace raw O2.5% with expected goals per team
+    <span class="tag tag-phase2">PHASE 2</span>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t30"><label for="t30">
+    Calibration chart wiring — renderPerformance() never populates calibBars
+    <span class="tag tag-phase2">PHASE 2</span>
+    <div class="note">Needs enough settled predictions first</div>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t31"><label for="t31">
+    True CLV reporting — closingOdds at 3–15 min now captures near-close; validate quality vs true bookmaker close
+    <span class="tag tag-phase2">PHASE 2</span>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t32"><label for="t32">
+    Betfair Exchange API — read exchange prices, compare with bookmaker odds, identify value gaps
+    <span class="tag tag-phase2">PHASE 2</span>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t33"><label for="t33">
+    Lineup data integration — confirm lineup impact on odds and whether post-lineup capture adds meaningful CLV signal
+    <span class="tag tag-phase2">PHASE 2</span>
+  </label>
+</div>
+
+<script>
+// Persist checkbox state across page loads
+document.querySelectorAll('input[type=checkbox]').forEach(cb => {
+  const key = 'gs-check-' + cb.id;
+  if (localStorage.getItem(key) === 'true') {
+    cb.checked = true;
+    cb.closest('.item').classList.add('done');
+  }
+  cb.addEventListener('change', () => {
+    localStorage.setItem(key, cb.checked);
+    cb.closest('.item').classList.toggle('done', cb.checked);
+  });
+});
+</script>
+</body>
+</html>
