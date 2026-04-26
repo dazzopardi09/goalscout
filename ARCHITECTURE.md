@@ -58,16 +58,21 @@ aggregates, etc.) but no predictions and no model output. Every row includes the
 
 **When to build it:** The first time either of these is true:
 
-1. **Two models share the same feature set.** Currently `context_raw` and its future
-   sibling `context_calibrated` use the same `pre_match_v1` rolling stats. As long as
-   there is only one model using these features, extracting them to a separate file
-   adds overhead without benefit. When a second model reads the same features, the
-   extraction pays for itself immediately — features are computed once, both models
-   read the same file, version drift is impossible.
+1. **A genuinely independent second model reads the same feature set.** This means a
+   model with its own scoring logic that consumes `pre_match_v1` rolling stats as
+   inputs — for example, a Poisson goal-total model, an opponent-adjusted variant of
+   `context_raw`, or a "context with xG" experiment. Note that `context_calibrated`
+   does NOT qualify: it is a post-processing step on `context_raw`'s output
+   probability, not an independent model with its own feature inputs (see the
+   `calibrated_current` precedent). As long as only one model reads a given feature
+   set, there is nothing to deduplicate and the feature store adds overhead without
+   benefit.
 
 2. **You want to train an ML model.** ML training needs a clean feature matrix over
    all fixtures (including ones the rule-based model skipped), with no model-decision
    filtering. The feature store is that matrix.
+
+Neither trigger is on the current roadmap.
 
 **What NOT to do:** Don't merge `pre_match_v1` (rolling stats from Football-Data.co.uk)
 and season aggregates (from SoccerSTATS) into a single feature store. They are
@@ -229,9 +234,11 @@ This works because both runners use `makeFixtureId` with the same inputs.
 3. **Stage 8** — Live deployment. `context_raw` writes live predictions to
    `data/predictions/context_raw/`. The prediction store becomes real.
 
-4. **Stage 9** — `context_calibrated`. Uses the same `pre_match_v1` features as
-   `context_raw`. **This is the feature-store trigger.** Extract
-   `data/features/pre_match_v1/` at this point.
+4. **Stage 9** — `context_calibrated`. This is a post-processing step on `context_raw`'s
+   output probability, following the same pattern as `calibrated_current` relative to
+   `current`. It applies Platt scaling to `context_o25_prob_raw` using parameters
+   learned from 150+ settled predictions. It does not read `pre_match_v1` features and
+   is not a trigger for building the feature store.
 
 5. **Future** — Retroactive backtest of `current` using season-aggregate inputs.
    Produces `data/backtests/current/`. Cross-model comparison via `fixtureId` becomes
