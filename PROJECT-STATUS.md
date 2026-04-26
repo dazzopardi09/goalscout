@@ -304,8 +304,16 @@ Completed: 2026-04-26
 ## Stage 6 — Multi-season EPL expansion
 Completed: 2026-04-26
 
-### Seasons run (context_raw v1.2)
-| Season  | Preds | O2.5 hit | U2.5 hit | Overall | ROI   | CLV    |
+### Scope
+- Model: context_raw_v1.2 (direction-aware thresholds)
+- Dataset: EPL seasons 2019-20 → 2024-25
+- Total predictions: 1,386
+
+---
+
+### Results by season
+
+| Season  | Preds | O2.5 Hit | U2.5 Hit | Overall | ROI   | CLV    |
 |---------|-------|----------|----------|---------|-------|--------|
 | 2024-25 | 237   | 60.3%    | 47.4%    | 58.2%   | -3.4% | -0.34% |
 | 2023-24 | 265   | 64.7%    | 33.3%    | 61.5%   | -3.5% | -0.77% |
@@ -313,21 +321,171 @@ Completed: 2026-04-26
 | 2021-22 | 221   | 56.9%    | 46.8%    | 53.4%   | -5.5% | -0.20% |
 | 2020-21 | 219   | 54.3%    | 56.7%    | 55.3%   | -2.8% | -0.08% |
 | 2019-20 | 211   | 57.7%    | 49.4%    | 54.5%   | -8.8% | +1.26% |
-| **AGG** |**1,386**|**~58.3%**|**~50.0%**|**56.7%**|**-4.1%**|**-0.02%**|
+| **AGG** | **1,386** | **~58.3%** | **~50.0%** | **56.7%** | **-4.1%** | **-0.02%** |
+
+---
 
 ### Key findings
-- CDO confirmed in 4/5 non-COVID seasons as suppressor signal (avg delta ~-15pp in strong years)
-- `strong_two_sided_over` rehabilitated: net positive in 4/6 seasons; 2024-25 was the outlier
-- `both_leaky_defence` unresolved: strong in 3 seasons, strongly negative in 2; N too small per season
-- Aggregate CLV -0.02% across 1,386 predictions: model is near fair value — not wrong direction
-- ROI gap (-4.1%) is a calibration problem, not a direction problem
-- 2019-20 flagged as COVID anomaly (neutral venues, no crowd effect, home/away CDO assumptions invalid)
-  → Exclude from Stage 8 deployment metrics
 
-### Five-season aggregate (excluding 2019-20)
-1,175 predictions · ~57.7% O2.5 hit rate · ROI ~-3.3% · CLV ~-0.18%
+#### 1. Directional signal is real
+- O2.5 hit rate consistently above base rate across seasons (~58–65%)
+- Aggregate CLV: **-0.02%**
+  - Model is pricing close to market efficiency
+  - Not systematically on the wrong side
 
-### Decision: Proceed to Stage 7 unchanged
-- No model changes before cross-league expansion
-- `strong_two_sided_over` concerns from Stage 5 fully resolved by multi-season data
-- `both_leaky_defence` needs Stage 7 volume to conclude
+👉 Conclusion:  
+**The model has directional validity.**
+
+---
+
+#### 2. Calibration is the primary problem
+- ROI: **-4.1%**
+- Mean edge: materially overstated vs realised outcomes
+- CLV ~ 0 confirms:
+  - Edge ≠ realised value
+  - Probabilities are miscalibrated, not misdirected
+
+👉 Conclusion:  
+**This is a calibration problem, not a modelling failure.**
+
+---
+
+#### 3. CDO (concede_driven_over) is the core signal
+- Strong suppressor in 4/5 non-COVID seasons
+- Typical delta in strong seasons: **-15pp to -25pp**
+- Weak/flat in 2 seasons, but rarely wrong direction
+
+👉 Conclusion:  
+**CDO is the most reliable structural feature in the model.**
+
+---
+
+#### 4. strong_two_sided_over validated
+- Positive in 4 of 6 seasons
+- Strong signal years:
+  - 2023-24: +6.8pp
+  - 2020-21: +8.2pp
+- Stage 5 concern (-5.4pp in 2024-25) confirmed as noise
+
+👉 Conclusion:  
+**Retain unchanged — no adjustment required.**
+
+---
+
+#### 5. both_leaky_defence unresolved
+- Strong positive in 3 seasons (up to ~80–87%)
+- Strong negative in 2 seasons
+- Very low sample size per season (5–26 fires)
+
+👉 Conclusion:  
+**Insufficient data — requires cross-league expansion.**
+
+---
+
+#### 6. U2.5 signal remains inconsistent
+- Highly variable across seasons
+- No stable edge or directional reliability
+
+👉 Conclusion:  
+**Treat U2.5 as unvalidated — retain for data collection only.**
+
+---
+
+### COVID season caveat (2019-20)
+
+- Final ~92 matches played without crowds
+- Home/away assumptions invalid
+- CDO behaviour inverted (+14.5pp)
+
+👉 Action:
+- Retain data for completeness
+- **Exclude from deployment decision metrics**
+
+---
+
+### Adjusted aggregate (excluding 2019-20)
+
+- Predictions: 1,175
+- O2.5 hit rate: ~57.7%
+- ROI: ~-3.3%
+- CLV: ~-0.18%
+
+---
+
+### Decision
+
+**Proceed to Stage 7 — cross-league expansion**
+
+Constraints:
+- No model changes prior to Stage 7
+- Validate signals across:
+  - different goal environments
+  - different league structures
+
+Focus areas for Stage 7:
+- Increase sample size for low-frequency flags (e.g. BLD)
+- Validate CDO stability outside EPL
+- Confirm grade separation consistency
+
+
+## Stage 9 — Backtest calibration training + validation
+Completed: 2026-04-26
+
+### Objective
+Train Platt scaling calibrators on historical backtest data for England and Germany O2.5.
+Validate on held-out seasons before any live use.
+
+### Method
+- Platt scaling (logistic sigmoid: 1 / (1 + exp(A·p + B)))
+- Newton-Raphson MLE with Platt regularisation for small samples
+- Temporal train/test split — train on older seasons, test on newer
+- Exclude 2019-20 from both leagues (COVID anomaly)
+
+### Train/test split
+| League | Train | Test | Excluded |
+|--------|-------|------|---------|
+| England | 2020-21, 2021-22, 2022-23 | 2023-24, 2024-25 | 2019-20 |
+| Germany | 2020-21, 2021-22, 2022-23 | 2023-24, 2024-25 | 2019-20 |
+
+### England O2.5 — REJECTED
+
+Two variants tested on the same held-out set:
+
+**V1** (train on 3 seasons): overcorrected mean by -6.4pp, sharpness collapsed to 20% of raw
+**V2** (train on 2022-23 only): overcorrected mean by -7.2pp, sharpness 23% of raw
+
+V2 was not better than V1. Both failed the same two checks.
+
+Root cause: the raw model has one isolated problem — the 75%+ probability bucket
+overstates by +24.8pp — but is accurate within ±4pp in all other buckets. A global
+Platt sigmoid cannot fix one region without destroying the others. Rejected.
+
+**Stage 10 decision:** Use raw probabilities for England. Flag context_o25_prob_raw > 0.75
+as overstated. Revisit at Stage 11 with grade-specific approach.
+
+### Germany O2.5 — ACCEPTED (v1, A/A+ only)
+
+Parameters: A=0.817704, B=0.037095
+
+| Metric | Raw | Calibrated | Change |
+|--------|-----|-----------|--------|
+| Brier | 0.2370 | 0.2309 | -0.0061 |
+| ECE | 7.13pp | 1.41pp | -5.72pp |
+| A+ calibration gap | +9.5pp | -1.4pp | near-perfect correction |
+| B calibration gap | +1.7pp | +9.2pp | distorted — do not use |
+
+B grade distortion is a known consequence of global Platt: correcting A+ overshoot
+pushes B upward. B grade uses raw probabilities in Stage 10.
+
+### Files produced
+- `src/engine/calibration.js` — loader module, `getCalibratedProb()` API
+- `data/calibration/germany_o25_v1.json` — active Platt parameters (gitignored)
+- `data/calibration/england_o25_v1.json` — rejected, archived (gitignored)
+- `scripts/context/CALIBRATION-REPORT.md` — full audit trail
+
+### Roadmap clarification (confirmed at Stage 9)
+- Stage 9 = backtest calibration (complete)
+- Stage 10 = live paper-tracking, raw + calibrated in parallel
+- Stage 11 = forward calibration review at 200+ settled predictions per league
+- Stage 12 = real-money decision gate (conditional on Stage 11)
+- No real-money betting at any stage prior to Stage 12
