@@ -275,6 +275,14 @@ docker builder prune -f
 docker compose up --build -d
 docker logs -f goalscout
 ```
+```bash
+docker compose down
+docker rmi goalscout goalscout-goalscout 2>/dev/null || true
+docker builder prune -f
+docker compose up --build -d
+docker images | grep goalscout
+docker logs -f goalscout
+```
 
 > Always use `docker compose up --build` — never `docker build` separately. Compose builds `goalscout-goalscout`; a separate build creates a different `goalscout` image that compose ignores.
 

@@ -8,8 +8,8 @@ A private local Unraid Docker app (port 3030) that scrapes football matches, ove
 ## Current State (v3 — April 2026)
 
 - **Deployed** on Unraid at `/mnt/user/appdata/goalscout`, port 3030
-- **Branch**: `fix/settlement-validation` (active work branch)
-- **Two parallel models**: Current (scoring-based) and Calibrated (probability-based, wider pool)
+- **Branch**: `feature/context-raw-backtest` (active work branch)
+- **Three parallel models**: Current (scoring-based), Calibrated (probability-based, wider pool), Context (context_raw — paper tracking, England + Germany only)
 - **Directional shortlist**: O2.5 vs U2.5 per match, not just "goals expected"
 - **Settlement**: Dual-source (Odds API primary + Football-Data validator where supported)
 - **Performance tracking**: Per-method, per-market hit rate, Brier score, edge, Move%, CLV (where genuine close captured)
@@ -23,14 +23,16 @@ SoccerSTATS today matches
   ↓ (FlareSolverr bypass)
 match-discovery.js — parse teams, stats, kickoff
   ↓
-orchestrator.js — score all matches, build dual shortlist
+orchestrator.js — score all matches, build three-model shortlist
   ↓
 the-odds-api.js — fetch odds for all scored matches with direction
   ↓
 Current shortlist (score >= 4, P >= 60%, has odds)
 Calibrated shortlist (calibrated P >= 60%, has odds) — INDEPENDENT pool
+Context shortlist (context_raw score >= threshold, England+Germany only) — PAPER TRACKING
   ↓
-logPrediction() — append to predictions.jsonl (deduped by fixtureId+method+direction)
+logPrediction() — current/calibrated → predictions.jsonl (deduped by fixtureId+method+direction)
+logContextPrediction() — context_raw → predictions.jsonl (deduped by fixtureId+predictionDate+modelVersion)
   ↓
 Settlement pipeline (see below)
   ↓
@@ -39,11 +41,42 @@ Performance tab — per method, per market stats
 
 ---
 
+## Three-Model Architecture
+
+### Current model
+- Source: SoccerSTATS season aggregates (O2.5%, avg TG, CS%, FTS%)
+- Scoring: directional score >= 4, calibrated P >= 60%, must have odds
+- Grade: score-based (A+/A/B)
+- Calibration: `applyCalibration()` via `league-calibration.json` (Platt per league)
+
+### Calibrated model
+- Same features as Current but draws from a wider candidate pool (all scored matches with odds, not just score >= 4)
+- Grade: probability-based (`getCalibratedGrade()`)
+- Direction: re-derived from calibrated O2.5 vs U2.5 probabilities
+
+### Context model (context_raw — paper tracking)
+- Source: Football-Data.org last-6-match rolling stats (gf_avg, ga_avg, o25_count, fts_count, etc.)
+- Leagues: England (PL) and Germany (BL1) only — validated Stage 8 signals
+- Scoring: `scoreContext()` in `context-shortlist.js` — independent of SoccerSTATS aggregates
+- Calibration: Germany O2.5 A/A+ uses Platt v1 (A=0.817704, B=0.037095); all others raw
+- Logged to `predictions.jsonl` with `method: 'context_raw'`
+- Included in `shortlist.json` as own `context_raw` array — does NOT affect current/calibrated
+- Displayed in Shortlist tab under Model filter: **Context** chip
+- Paper tracking only — not for real-money decisions until Stage 12
+
+### All-mode display merge (frontend only, no backend effect)
+- current + calibrated + context_raw agree (same fixture + direction) → one row, `Cur Cal Ctx` badges
+- current + calibrated agree, context_raw differs → merged cur/cal row + separate ctx row
+- current + calibrated disagree → separate rows (disagreement is meaningful)
+- context_raw only → own row with `Ctx` badge
+
+---
+
 ## Cron Jobs (src/index.js)
 
 | Cron | Schedule | Function |
 |---|---|---|
-| Full refresh | `5 */6 * * *` | `runFullRefresh()` — scrape + score + odds |
+| Full refresh | `5 */6 * * *` | `runFullRefresh()` — scrape + score + odds + context_raw |
 | Settlement sweep | `*/30 * * * *` | `fetchScoresAndSettle()` — settle eligible predictions |
 | Pre-KO odds capture | `*/30 * * * *` | `fetchCurrentOddsForPending()` — capture pre-KO price |
 | Close odds capture | `*/5 * * * *` | `captureClosingOdds()` — capture near-close price (3–15 min before KO) |
@@ -119,17 +152,27 @@ Records settled before April 25 2026 may have `closingOdds` = `preKickoffOdds` (
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/status` | Refresh state, meta, `lastRefresh`, `lastSettlementChange` |
-| GET | `/api/shortlist` | Current + calibrated shortlist |
+| GET | `/api/shortlist` | `{ current, calibrated, context_raw, comparison }` |
 | GET | `/api/stats` | Performance stats (per method, per market) |
 | GET | `/api/predictions` | Raw prediction history (last 100) |
 | GET | `/api/conflicts` | Settlement conflicts log |
 | GET | `/api/match/:id` | Match detail (if scraped) |
+| GET | `/api/context/index` | Backtest index (`_index.json`) — season metadata |
+| GET | `/api/context/backtest?league=&season=` | Backtest JSONL as JSON array (path-traversal safe) |
 | POST | `/api/refresh` | Trigger manual full refresh |
 | POST | `/api/settle` | Trigger manual settlement sweep |
 | POST | `/api/pre-kickoff` | Trigger manual pre-KO odds capture |
 
-### lastSettlementChange
-Added to `/api/status`. Only updates when at least one prediction is actually written during a settlement sweep. Stays null if the sweep matches nothing. Used by the frontend to detect when to reload performance data without a full page reload.
+### /api/shortlist shape (updated)
+```json
+{
+  "current":     [...],
+  "calibrated":  [...],
+  "context_raw": [...],
+  "comparison":  { "overlapIds": [...], "currentOnlyIds": [...], "calibratedOnlyIds": [...] }
+}
+```
+`context_raw` is always its own array — never mixed into current or calibrated.
 
 ---
 
@@ -151,10 +194,13 @@ No websockets, no SSE, no full page reload.
 
 | File | Description |
 |---|---|
-| `data/history/predictions.jsonl` | Append-only prediction log. Deduped by `fixtureId+method+direction`. |
+| `data/history/predictions.jsonl` | Append-only prediction log. Deduped by `fixtureId+method+direction` (current/calibrated) or `fixtureId+predictionDate+modelVersion` (context_raw). |
 | `data/history/results.jsonl` | One entry per settled fixture. Deduped by `fixtureId`. |
 | `data/history/settlement-conflicts.jsonl` | Append-only. Written when Odds API and Football-Data disagree on a score. |
-| `data/calibration/league-calibration.json` | Platt scaling parameters per league. Needs ~200+ settled predictions to be meaningful. |
+| `data/calibration/league-calibration.json` | Platt scaling parameters for current/calibrated model. Needs ~200+ settled predictions. |
+| `data/calibration/germany_o25_v1.json` | Context_raw Platt params for Germany O2.5 A/A+. Gitignored — lives in data/ only. |
+| `data/rolling-results/{league}.json` | 8-week rolling results cache from Football-Data.org. Used by context_raw pipeline. |
+| `data/backtests/context_raw/` | Historical backtest JSONL files by league/season. Served by `/api/context/backtest`. |
 | `data/odds-cache.json` | Disk-persistent odds cache. Survives restarts. TTL: sports 6h, odds 3h. |
 
 ---
@@ -163,17 +209,21 @@ No websockets, no SSE, no full page reload.
 
 | File | Purpose |
 |---|---|
-| `src/scrapers/orchestrator.js` | Main refresh — dual model, independent calibrated pool |
+| `src/scrapers/orchestrator.js` | Main refresh — three-model pipeline, context_raw in Step 7.5 |
 | `src/scrapers/match-discovery.js` | SoccerSTATS parser — away stats offsets fixed |
-| `src/engine/shortlist.js` | Directional scoring (O2.5 vs U2.5) |
+| `src/engine/shortlist.js` | Directional scoring (O2.5 vs U2.5) for current/calibrated |
 | `src/engine/probability.js` | P(O2.5), margin removal, edge |
-| `src/engine/calibration.js` | `applyCalibration()` via league-calibration.json |
+| `src/engine/calibration.js` | `applyCalibration()` via league-calibration.json (current/calibrated) |
+| `src/engine/context-shortlist.js` | `scoreContext()` — context_raw scoring engine (rolling stats only) |
+| `src/engine/context-predictions.js` | `logContextPredictions()` — context_raw prediction logger |
+| `src/engine/context-calibration.js` | `getCalibratedProb()` — Platt loader for context_raw (Germany O2.5) |
+| `src/engine/rolling-stats.js` | `computeRollingStats()` — per-team last-6-match stat aggregation |
 | `src/engine/history.js` | Prediction logging, dedupe, reconcile(), perf stats |
 | `src/engine/settler.js` | Score fetching, settlement, pre-KO odds, close capture |
 | `src/results/football-data.js` | Football-Data.org fetcher + league map + cache |
 | `src/odds/the-odds-api.js` | SLUG_TO_ODDS_MAP, sports list, odds fetch, disk cache |
 | `src/utils/team-names.js` | Shared normaliser + alias map |
-| `public/index.html` | v3 UI — Current/Calibrated tabs, performance view |
+| `public/index.html` | v3 UI — All/Current/Calibrated/Context tabs, smart All-mode merge, Research tab |
 
 ---
 
@@ -204,11 +254,17 @@ docker exec -it goalscout node /app/script.js
 ## Operational Checks
 
 ```bash
+# All three models appearing in shortlist
+curl -s http://localhost:3030/api/shortlist | node -e "
+const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+console.log('current:', d.current.length, 'calibrated:', d.calibrated.length, 'context_raw:', (d.context_raw||[]).length);
+"
+
+# Context_raw pipeline working
+docker logs goalscout | grep -E "context rolling|context_raw:"
+
 # Settlement working
 docker logs goalscout | grep settler
-
-# Close capture working (will be silent until a match is 3-15 min from KO)
-docker logs goalscout | grep close-capture
 
 # Confirm lastSettlementChange is populated after matches settle
 curl -s http://localhost:3030/api/status | jq '.lastSettlementChange'
@@ -219,7 +275,7 @@ const { readJSONL } = require('./src/engine/history');
 const config = require('./src/config');
 const preds = readJSONL(config.PREDICTIONS_FILE);
 const settled = preds.filter(p => p.status === 'settled_won' || p.status === 'settled_lost').slice(-3);
-settled.forEach(p => console.log(p.homeTeam,'vs',p.awayTeam, p.result, 'src:',p.resultSource, 'closeAt:',p.closingOddsCapturedAt));
+settled.forEach(p => console.log(p.method, p.homeTeam,'vs',p.awayTeam, p.result, 'src:',p.resultSource));
 "
 
 # Check for conflicts
@@ -238,17 +294,21 @@ curl -s http://localhost:3030/api/conflicts | jq '.count'
 | `leagueStatsFound: 0` in meta — league O2.5% weight effectively zero | Investigate separately |
 | Calibration data file sparse — needs 200+ settled predictions per league | Accept for now — accumulating |
 | `preKickoffOdds` captured up to 2h before KO — misses lineup-driven moves | By design for now; `closingOdds` at 3-15min is the fix |
+| Stuttgart vs Werder Bremen showed "No odds" in Context tab | Expected — Odds API had U2.5 odds but context_raw called O2.5; market disagreement, not a bug |
 
 ---
 
-## Performance Snapshot (April 25 2026)
+## Performance Snapshot (April 26 2026)
 
 - Current model: 65.2% hit rate, 69 settled
 - Calibrated model: 66.7% hit rate, 45 settled
-- Overlap: 90 (0 current-only, 35 calibrated-only)
+- Context_raw: 2 live predictions (paper tracking, accumulating)
+- Overlap current/calibrated: 90 (0 current-only, 35 calibrated-only)
 - Pre-KO move (mean): -3.5% O2.5, -2.2% U2.5 (negative = market agrees, good)
 - CLV figures in UI: partially reliable — see legacy caveat above
 - Sample still small — Brier and edge are more meaningful than hit rate at this stage
+
+---
 
 ## Stage 4 — Context Research UI
 Completed: 2026-04-26
@@ -273,9 +333,6 @@ Completed: 2026-04-26
 - GET /api/context/index → serves _index.json (season metadata)
 - GET /api/context/backtest?league=&season= → serves JSONL as JSON array (path-traversal safe)
 
-### Model label correction
-- Static model label corrected to v1.2 (was incorrectly showing v1.1)
-
 ---
 
 ## Stage 5 — Single-season analysis and model assessment
@@ -292,24 +349,11 @@ Completed: 2026-04-26
 - Score=3 O2.5 fixtures: 60.0% hit rate on 35 fixtures = same signal as passing predictions
 - Score=3 U2.5 fixtures: 30.8% hit rate on 13 fixtures = below base rate, correctly filtered
 - Change: MIN_O25_SCORE = 3, MIN_U25_SCORE = 4 (was flat 4 for both)
-- Result: 237 predictions vs 202 (+17.3%), O2.5 hit rate unchanged at 60.3%
-- 61/61 unit tests pass after test update
-
-### Decision: Proceed to Stage 6 as-is
-- `strong_two_sided_over` flagged for re-evaluation after multi-season data
-- U2.5 accepted as unvalidated — collect data, do not rely on for Stage 8
 
 ---
 
 ## Stage 6 — Multi-season EPL expansion
 Completed: 2026-04-26
-
-### Scope
-- Model: context_raw_v1.2 (direction-aware thresholds)
-- Dataset: EPL seasons 2019-20 → 2024-25
-- Total predictions: 1,386
-
----
 
 ### Results by season
 
@@ -323,148 +367,14 @@ Completed: 2026-04-26
 | 2019-20 | 211   | 57.7%    | 49.4%    | 54.5%   | -8.8% | +1.26% |
 | **AGG** | **1,386** | **~58.3%** | **~50.0%** | **56.7%** | **-4.1%** | **-0.02%** |
 
----
-
-### Key findings
-
-#### 1. Directional signal is real
-- O2.5 hit rate consistently above base rate across seasons (~58–65%)
-- Aggregate CLV: **-0.02%**
-  - Model is pricing close to market efficiency
-  - Not systematically on the wrong side
-
-👉 Conclusion:  
-**The model has directional validity.**
+Key findings: directional signal real, calibration is primary problem, CDO is core signal, strong_two_sided_over validated, U2.5 unvalidated.
 
 ---
-
-#### 2. Calibration is the primary problem
-- ROI: **-4.1%**
-- Mean edge: materially overstated vs realised outcomes
-- CLV ~ 0 confirms:
-  - Edge ≠ realised value
-  - Probabilities are miscalibrated, not misdirected
-
-👉 Conclusion:  
-**This is a calibration problem, not a modelling failure.**
-
----
-
-#### 3. CDO (concede_driven_over) is the core signal
-- Strong suppressor in 4/5 non-COVID seasons
-- Typical delta in strong seasons: **-15pp to -25pp**
-- Weak/flat in 2 seasons, but rarely wrong direction
-
-👉 Conclusion:  
-**CDO is the most reliable structural feature in the model.**
-
----
-
-#### 4. strong_two_sided_over validated
-- Positive in 4 of 6 seasons
-- Strong signal years:
-  - 2023-24: +6.8pp
-  - 2020-21: +8.2pp
-- Stage 5 concern (-5.4pp in 2024-25) confirmed as noise
-
-👉 Conclusion:  
-**Retain unchanged — no adjustment required.**
-
----
-
-#### 5. both_leaky_defence unresolved
-- Strong positive in 3 seasons (up to ~80–87%)
-- Strong negative in 2 seasons
-- Very low sample size per season (5–26 fires)
-
-👉 Conclusion:  
-**Insufficient data — requires cross-league expansion.**
-
----
-
-#### 6. U2.5 signal remains inconsistent
-- Highly variable across seasons
-- No stable edge or directional reliability
-
-👉 Conclusion:  
-**Treat U2.5 as unvalidated — retain for data collection only.**
-
----
-
-### COVID season caveat (2019-20)
-
-- Final ~92 matches played without crowds
-- Home/away assumptions invalid
-- CDO behaviour inverted (+14.5pp)
-
-👉 Action:
-- Retain data for completeness
-- **Exclude from deployment decision metrics**
-
----
-
-### Adjusted aggregate (excluding 2019-20)
-
-- Predictions: 1,175
-- O2.5 hit rate: ~57.7%
-- ROI: ~-3.3%
-- CLV: ~-0.18%
-
----
-
-### Decision
-
-**Proceed to Stage 7 — cross-league expansion**
-
-Constraints:
-- No model changes prior to Stage 7
-- Validate signals across:
-  - different goal environments
-  - different league structures
-
-Focus areas for Stage 7:
-- Increase sample size for low-frequency flags (e.g. BLD)
-- Validate CDO stability outside EPL
-- Confirm grade separation consistency
-
 
 ## Stage 9 — Backtest calibration training + validation
 Completed: 2026-04-26
 
-### Objective
-Train Platt scaling calibrators on historical backtest data for England and Germany O2.5.
-Validate on held-out seasons before any live use.
-
-### Method
-- Platt scaling (logistic sigmoid: 1 / (1 + exp(A·p + B)))
-- Newton-Raphson MLE with Platt regularisation for small samples
-- Temporal train/test split — train on older seasons, test on newer
-- Exclude 2019-20 from both leagues (COVID anomaly)
-
-### Train/test split
-| League | Train | Test | Excluded |
-|--------|-------|------|---------|
-| England | 2020-21, 2021-22, 2022-23 | 2023-24, 2024-25 | 2019-20 |
-| Germany | 2020-21, 2021-22, 2022-23 | 2023-24, 2024-25 | 2019-20 |
-
-### England O2.5 — REJECTED
-
-Two variants tested on the same held-out set:
-
-**V1** (train on 3 seasons): overcorrected mean by -6.4pp, sharpness collapsed to 20% of raw
-**V2** (train on 2022-23 only): overcorrected mean by -7.2pp, sharpness 23% of raw
-
-V2 was not better than V1. Both failed the same two checks.
-
-Root cause: the raw model has one isolated problem — the 75%+ probability bucket
-overstates by +24.8pp — but is accurate within ±4pp in all other buckets. A global
-Platt sigmoid cannot fix one region without destroying the others. Rejected.
-
-**Stage 10 decision:** Use raw probabilities for England. Flag context_o25_prob_raw > 0.75
-as overstated. Revisit at Stage 11 with grade-specific approach.
-
 ### Germany O2.5 — ACCEPTED (v1, A/A+ only)
-
 Parameters: A=0.817704, B=0.037095
 
 | Metric | Raw | Calibrated | Change |
@@ -472,20 +382,46 @@ Parameters: A=0.817704, B=0.037095
 | Brier | 0.2370 | 0.2309 | -0.0061 |
 | ECE | 7.13pp | 1.41pp | -5.72pp |
 | A+ calibration gap | +9.5pp | -1.4pp | near-perfect correction |
-| B calibration gap | +1.7pp | +9.2pp | distorted — do not use |
+| B calibration gap | +1.7pp | +9.2pp | distorted — use raw |
 
-B grade distortion is a known consequence of global Platt: correcting A+ overshoot
-pushes B upward. B grade uses raw probabilities in Stage 10.
+### England O2.5 — REJECTED
+Both V1 (3-season train) and V2 (1-season train) failed: overcorrected mean by 6–7pp, sharpness collapsed. Root cause: global Platt cannot fix isolated 75%+ bucket without destroying accurate 60–75% range. Stage 10 decision: use raw, flag `context_o25_prob_raw > 0.75` as overstated.
 
-### Files produced
-- `src/engine/calibration.js` — loader module, `getCalibratedProb()` API
-- `data/calibration/germany_o25_v1.json` — active Platt parameters (gitignored)
-- `data/calibration/england_o25_v1.json` — rejected, archived (gitignored)
-- `scripts/context/CALIBRATION-REPORT.md` — full audit trail
+---
 
-### Roadmap clarification (confirmed at Stage 9)
-- Stage 9 = backtest calibration (complete)
-- Stage 10 = live paper-tracking, raw + calibrated in parallel
-- Stage 11 = forward calibration review at 200+ settled predictions per league
+## Stage 10 — Context_raw live paper-tracking
+Completed: 2026-04-26
+
+### What was built
+- `context-predictions.js` — `logContextPredictions()` logs context_raw predictions to `predictions.jsonl` with `method: 'context_raw'`, `status: 'pending'`, and full probability block (raw, calibrated, used, source, overstated flag)
+- `context-calibration.js` — `getCalibratedProb()` applies Germany O2.5 Platt v1 for A/A+ grade; raw fallback for all other cases
+- Orchestrator Step 7.5 — scores England + Germany fixtures with rolling stats, logs predictions, and builds `contextShortlisted` array
+- `shortlist.json` — now has `context_raw` as own top-level key alongside `current` and `calibrated`
+- `/api/shortlist` — passes `context_raw` through automatically (no routes.js change needed)
+
+### Name collision fix (critical)
+- `context-calibration.js` was initially named `calibration.js`, colliding with the existing current/calibrated model calibration file
+- Fixed by renaming to `context-calibration.js` and restoring original `calibration.js`
+- Both now coexist: `applyCalibration()` (current/calibrated) and `getCalibratedProb()` (context_raw)
+
+### UI changes (public/index.html)
+- Model filter: **All | Current | Calibrated | Context** (Context chip, no sub-labels)
+- `getActiveShortlist()` returns `context_raw` array when `method === 'context_raw'`
+- All-mode smart merge: dedupes by `fixtureId + direction + method`; merges rows across models where they agree; shows separate rows where they disagree; attaches `_models[]` array for badge rendering
+- Model badges rendered under match name in All mode: `Cur` (cyan), `Cal` (green), `Ctx` (indigo)
+- `loadShortlist()` reads `payload.context_raw` from API response
+
+### Live pipeline log evidence (April 26 2026)
+```
+[football-data] rolling: 65 matches loaded for BL1
+[orchestrator] context rolling: 18 teams loaded for germany
+[context] logged 2 predictions this refresh
+[orchestrator] context_raw: 2 predictions logged
+[orchestrator] context_raw shortlist: 2 matches
+[orchestrator] done. 579 scraped → 90 bettable → 26 unique shortlisted (10 current, 16 calibrated, 2 context_raw)
+```
+
+### Roadmap
+- Stage 11 = forward calibration review at 200+ settled context_raw predictions per league
 - Stage 12 = real-money decision gate (conditional on Stage 11)
 - No real-money betting at any stage prior to Stage 12

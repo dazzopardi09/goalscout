@@ -35,6 +35,91 @@ const {
 const { writeJSON, readJSON, writeMatchDetail } = require('../utils/storage');
 const config = require('../config');
 const { applyCalibration } = require('../engine/calibration');
+const { scoreContext }          = require('../engine/context-shortlist');
+const { computeRollingStats }   = require('../engine/rolling-stats');
+const { logContextPredictions } = require('../engine/context-predictions');
+const { fetchRollingResults }   = require('../results/football-data');
+const { singleTeamMatch }       = require('../utils/team-names');
+
+// ── Context_raw rolling stats helpers ────────────────────────────────────────
+//
+// Football-Data.org competition codes for the two paper-tracked leagues.
+// England (PL) and Germany (BL1) are the only leagues with validated
+// backtest signals from Stage 8. Netherlands and others remain
+// research-only in the Research tab.
+const CONTEXT_FD_CODES = { england: 'PL', germany: 'BL1' };
+ 
+/**
+ * Fetch the last 8 weeks of finished matches from Football-Data.org
+ * for a league and compute per-team rolling last-6 stats.
+ *
+ * Returns Map<fdOrgTeamName, rollingStats>.
+ * Returns empty Map if FD.org data is unavailable (API error, no token, etc.)
+ *
+ * @param {string} leagueSlug - 'england' | 'germany'
+ */
+async function buildRollingMap(leagueSlug) {
+  const code = CONTEXT_FD_CODES[leagueSlug];
+  if (!code) return new Map();
+ 
+  const fdMatches = await fetchRollingResults(code);
+  if (!fdMatches || fdMatches.length === 0) return new Map();
+ 
+  // Convert FD.org format to what computeRollingStats expects.
+  // date must be a Date object; other derived boolean fields are required.
+  const adapted = fdMatches.map(m => ({
+    date:        new Date(m.utcDate),
+    homeTeam:    m.homeTeam,
+    awayTeam:    m.awayTeam,
+    homeGoals:   m.homeGoals,
+    awayGoals:   m.awayGoals,
+    totalGoals:  m.homeGoals + m.awayGoals,
+    result_o25:  (m.homeGoals + m.awayGoals) > 2.5,
+    result_u25:  (m.homeGoals + m.awayGoals) <= 2.5,
+    result_btts: m.homeGoals > 0 && m.awayGoals > 0,
+  }));
+ 
+  // Collect every unique team in the FD.org dataset
+  const teams = new Set();
+  adapted.forEach(m => { teams.add(m.homeTeam); teams.add(m.awayTeam); });
+ 
+  // cutoff = now: all adapted matches are completed, so "before now" includes all of them
+  const now = new Date();
+  const rollingMap = new Map();
+  for (const team of teams) {
+    rollingMap.set(team, computeRollingStats(team, adapted, now));
+  }
+ 
+  return rollingMap;
+}
+ 
+/**
+ * Find rolling stats for a SoccerSTATS team name in an FD.org-keyed rolling map.
+ *
+ * FD.org uses full legal names ("Arsenal FC", "Manchester City FC") while
+ * SoccerSTATS uses shorter display names ("Arsenal", "Man City"). This function
+ * bridges the gap using singleTeamMatch() — the same normalisation/alias logic
+ * used by teamsMatch() in settler.js.
+ *
+ * Returns the rolling stats object, or null if no match found.
+ *
+ * @param {string} ssTeamName - SoccerSTATS display team name
+ * @param {Map}    rollingMap - Map<fdOrgTeamName, rollingStats> from buildRollingMap()
+ */
+function lookupRolling(ssTeamName, rollingMap) {
+  if (!ssTeamName || !rollingMap || rollingMap.size === 0) return null;
+ 
+  // Direct match (handles the few cases where names happen to be identical)
+  if (rollingMap.has(ssTeamName)) return rollingMap.get(ssTeamName);
+ 
+  // Fuzzy match: normalises both names (strip "FC", diacritics, aliases),
+  // then checks token overlap. Threshold ≥ 0.4 overlap OR one is a substring.
+  for (const [fdName, rolling] of rollingMap) {
+    if (singleTeamMatch(fdName, ssTeamName)) return rolling;
+  }
+ 
+  return null;
+}
 
 let refreshState = {
   status: 'idle',
@@ -305,6 +390,135 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       }
     }
 
+    // ── Step 7.5: context_raw paper-tracking — England + Germany only ─────────
+    //
+    // Scores today's scored matches with the context_raw model (per-team last-6
+    // rolling stats from Football-Data.org) and logs predictions to
+    // predictions.jsonl alongside the current/calibrated predictions.
+    //
+    // Architecture constraints:
+    //   - Does NOT modify scored[], shortlisted, or either shortlist array.
+    //   - Runs silently if FD.org data is unavailable (API error, no token).
+    //   - Only England and Germany are paper-tracked (validated Stage 8 signals).
+    //   - 1X2 odds not available in live pipeline — CDO flag uses gf_avg fallback.
+    //   - Prediction records carry method:'context_raw' and status:'pending'
+    //     so settler.js handles them independently of current/calibrated records.
+    //
+    // contextShortlisted is populated here and written to shortlist.json so the
+    // frontend can show context_raw predictions alongside current/calibrated.
+    // It is strictly read-only from the current/calibrated perspective.
+    let contextShortlisted = [];
+    {
+      const CONTEXT_SLUGS = new Set(['england', 'germany']);
+      const contextCandidates = scored.filter(m => CONTEXT_SLUGS.has(m.leagueSlug));
+ 
+      if (contextCandidates.length > 0) {
+        refreshState.progress = 'Scoring context_raw predictions...';
+ 
+        // One FD.org API call per paper-tracked league, result cached for 4h.
+        const rollingByLeague = new Map();
+        for (const slug of CONTEXT_SLUGS) {
+          if (!contextCandidates.some(m => m.leagueSlug === slug)) continue;
+          try {
+            const map = await buildRollingMap(slug);
+            rollingByLeague.set(slug, map);
+            console.log(`[orchestrator] context rolling: ${map.size} teams loaded for ${slug}`);
+          } catch (e) {
+            console.warn(`[orchestrator] context rolling failed for ${slug}:`, e.message);
+          }
+        }
+ 
+        // Score every candidate with context_raw and collect results
+        const contextItems = [];
+        let noRollingCount = 0;
+ 
+        for (const m of contextCandidates) {
+          const rollingMap = rollingByLeague.get(m.leagueSlug);
+          if (!rollingMap) continue;
+ 
+          const homeRolling = lookupRolling(m.homeTeam, rollingMap);
+          const awayRolling = lookupRolling(m.awayTeam, rollingMap);
+ 
+          if (!homeRolling || !awayRolling) {
+            // Team not found in FD.org data: too early in season, or name mismatch.
+            // Log at debug level — expected for first few GWs of a new season.
+            console.log(`[orchestrator] context: no rolling data for ${m.homeTeam} vs ${m.awayTeam} (${m.leagueSlug})`);
+            noRollingCount++;
+            continue;
+          }
+ 
+          // 1X2 odds not available — scoreContext falls back to gf_avg proxy
+          // for favourite/underdog determination (CDO flag).
+          const ctxScored = scoreContext(homeRolling, awayRolling, {
+            oddsHomeOpen: null,
+            oddsAwayOpen: null,
+          });
+ 
+          contextItems.push({ match: m, scored: ctxScored, homeRolling, awayRolling });
+        }
+ 
+        if (contextItems.length > 0) {
+          // Logs predictions with calibration fields, deduplication, and status:'pending'.
+          // Filters to England/Germany internally; skips scored.skip === true.
+          logContextPredictions(contextItems);
+        }
+ 
+        const active = contextItems.filter(i => !i.scored.skip).length;
+        console.log(
+          `[orchestrator] context_raw: ${active} predictions logged` +
+          ` (${contextItems.length - active} model-skipped,` +
+          ` ${noRollingCount} no-rolling-data,` +
+          ` ${contextCandidates.length} candidates in ${[...CONTEXT_SLUGS].join('/')})`
+        );
+
+        // Build contextShortlisted for the shortlist API response.
+        // Only active (non-skipped) predictions with odds are included.
+        // This array is independent of current/calibrated — it is read-only
+        // from their perspective and does not affect their shortlists.
+        contextShortlisted = contextItems
+          .filter(i => !i.scored.skip)
+          .map(({ match, scored: ctxScored, homeRolling, awayRolling }) => {
+            const direction  = ctxScored.direction;
+            const oddsData   = direction === 'o25' ? match.odds?.o25 : match.odds?.u25;
+            const modelProb  = direction === 'o25'
+              ? ctxScored.context_o25_prob_raw
+              : ctxScored.context_u25_prob_raw;
+            const fairOdds   = ctxScored.fairOdds;
+            const marketOdds = oddsData?.price ?? null;
+            const edge       = (marketOdds && fairOdds)
+              ? Math.round(((marketOdds / fairOdds) - 1) * 10000) / 100
+              : null;
+
+            return {
+              ...match,
+              method:    'context_raw',
+              direction,
+              grade:     ctxScored.grade,
+              // analysis-compatible shape so the Shortlist accordion renders correctly
+              analysis: {
+                o25: {
+                  probability: ctxScored.context_o25_prob_raw,
+                  fairOdds:    direction === 'o25' ? fairOdds : (ctxScored.context_o25_prob_raw > 0 ? Math.round((1 / ctxScored.context_o25_prob_raw) * 100) / 100 : null),
+                  edge:        direction === 'o25' ? edge : null,
+                  marketOdds:  direction === 'o25' ? marketOdds : null,
+                },
+                u25: {
+                  probability: ctxScored.context_u25_prob_raw,
+                  fairOdds:    direction === 'u25' ? fairOdds : (ctxScored.context_u25_prob_raw > 0 ? Math.round((1 / ctxScored.context_u25_prob_raw) * 100) / 100 : null),
+                  edge:        direction === 'u25' ? edge : null,
+                  marketOdds:  direction === 'u25' ? marketOdds : null,
+                },
+              },
+              contextScored:   ctxScored,
+              homeRollingSnap: homeRolling,
+              awayRollingSnap: awayRolling,
+            };
+          });
+
+        console.log(`[orchestrator] context_raw shortlist: ${contextShortlisted.length} matches`);
+      }
+    }
+
     const shortlistForDetails = [...currentShortlisted, ...calibratedShortlisted]
       .filter((m, i, arr) => arr.findIndex(x => x.id === m.id && x.method === m.method) === i);
 
@@ -362,6 +576,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     writeJSON(config.SHORTLIST_FILE, {
       current: currentShortlisted,
       calibrated: calibratedShortlisted,
+      context_raw: contextShortlisted,
       comparison: {
         overlapIds: [...currentIds].filter(id => calibratedIds.has(id)),
         currentOnlyIds: [...currentIds].filter(id => !calibratedIds.has(id)),
@@ -389,7 +604,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     refreshState.progress       = 'Complete';
     refreshState.lastError      = null;
 
-    console.log(`[orchestrator] done. ${allMatches.length} scraped → ${matchesToScore.length} bettable → ${shortlistForDetails.length} unique shortlisted (${currentShortlisted.length} current, ${calibratedShortlisted.length} calibrated)`);
+    console.log(`[orchestrator] done. ${allMatches.length} scraped → ${matchesToScore.length} bettable → ${shortlistForDetails.length} unique shortlisted (${currentShortlisted.length} current, ${calibratedShortlisted.length} calibrated, ${contextShortlisted.length} context_raw)`);
     return refreshState;
 
   } catch (err) {

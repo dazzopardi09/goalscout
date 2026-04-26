@@ -7,6 +7,7 @@
 3. **Research before implementing** — check ToS, API docs, and feasibility before writing scrapers or integrations.
 4. **Verify after every deploy** — check logs and test endpoints before marking a task done.
 5. **Do not touch model/shortlist/probability logic** unless explicitly asked.
+6. **Never add UI labels that the user has removed** — specifically, the Context chip label is just `Context` with no sub-label (no "paper", no opacity span). Do not re-add these.
 
 ---
 
@@ -60,6 +61,17 @@ docker exec -it goalscout node -e "require('./src/engine/module')"
 Avoid bash heredocs when the script contains backticks, template literals, single quotes, or special characters. Instead:
 - Create the file with `create_file` tool and present it to the user for download
 - Or write it via `python3 -c "open(...).write(...)"` on the host
+- Multi-line JS edits in existing files: use Python3 `content.replace(old, new)` — more reliable than `sed` or shell heredocs
+
+---
+
+## File naming — critical collision rule
+
+`src/engine/calibration.js` is the **current/calibrated model** calibration file. It exports `applyCalibration()`.
+
+`src/engine/context-calibration.js` is the **context_raw model** calibration file. It exports `getCalibratedProb()`.
+
+**Never** name a context_raw calibration file `calibration.js`. These two files must remain separate. Overwriting `calibration.js` breaks the current and calibrated models silently.
 
 ---
 
@@ -67,7 +79,7 @@ Avoid bash heredocs when the script contains backticks, template literals, singl
 
 | Cron | Schedule | Purpose |
 |---|---|---|
-| Full refresh | `5 */6 * * *` | Scrape SoccerSTATS + score + fetch odds |
+| Full refresh | `5 */6 * * *` | Scrape SoccerSTATS + score + fetch odds + context_raw rolling |
 | Settlement sweep | `*/30 * * * *` | Settle eligible predictions via Odds API + FD |
 | Pre-KO odds | `*/30 * * * *` | Capture odds up to 2h before kickoff |
 | Close capture | `*/5 * * * *` | Capture closing odds 3–15 min before kickoff |
@@ -96,15 +108,42 @@ Avoid bash heredocs when the script contains backticks, template literals, singl
 
 ---
 
+## Three-model architecture rules
+
+### context_raw is isolated — do not mix with current/calibrated
+- context_raw predictions use `logContextPrediction()` in `context-predictions.js`, NOT `logPrediction()` in `history.js`
+- Dedup key for context_raw: `fixtureId + predictionDate + modelVersion` (allows coexistence with current/calibrated for same fixture)
+- Dedup key for current/calibrated: `fixtureId + predictionDate` only
+- `shortlist.json` has three top-level keys: `current`, `calibrated`, `context_raw` — never merge these arrays server-side
+- All-mode display merging is **frontend only** — `getActiveShortlist()` in `index.html`
+
+### context_raw shortlist in orchestrator
+- Built in Step 7.5 as `contextShortlisted` — declared before the Step 7.5 block with `let contextShortlisted = []`
+- Written to `shortlist.json` as `context_raw: contextShortlisted`
+- Does NOT affect `currentShortlisted`, `calibratedShortlisted`, or `shortlistForDetails`
+- England (PL) and Germany (BL1) only — `CONTEXT_SLUGS = new Set(['england', 'germany'])`
+
+### context_raw calibration
+- Germany O2.5 A/A+: Platt v1 (A=0.817704, B=0.037095) — ACCEPTED
+- Germany O2.5 B: use raw (calibrated overshoots by +9.2pp)
+- England O2.5: always raw (global Platt rejected — see Stage 9)
+- All other leagues: always raw
+- Parameters live in `data/calibration/germany_o25_v1.json` (gitignored — data/ only)
+
+---
+
 ## Data files
 
 | File | Notes |
 |---|---|
-| `data/history/predictions.jsonl` | Append-only. Deduped by `fixtureId+method+direction`. |
+| `data/history/predictions.jsonl` | Append-only. Current/calibrated deduped by `fixtureId+predictionDate`. Context_raw deduped by `fixtureId+predictionDate+modelVersion`. |
 | `data/history/results.jsonl` | One entry per fixture. Deduped by `fixtureId`. |
 | `data/history/settlement-conflicts.jsonl` | Append-only. Written on source disagreements. |
-| `data/calibration/league-calibration.json` | May be empty — needs 200+ settled predictions. |
-| `data/odds-cache.json` | Disk-persistent. Survives restarts. |
+| `data/calibration/league-calibration.json` | Current/calibrated Platt params. May be sparse — needs 200+ settled preds. |
+| `data/calibration/germany_o25_v1.json` | Context_raw Platt params. Gitignored. |
+| `data/rolling-results/{league}.json` | 8-week FD.org rolling results cache. |
+| `data/backtests/context_raw/` | Historical backtest files. Served by `/api/context/backtest`. |
+| `data/odds-cache.json` | Disk-persistent. Survives restarts. TTL: sports 6h, odds 3h. |
 
 ---
 
@@ -112,16 +151,29 @@ Avoid bash heredocs when the script contains backticks, template literals, singl
 
 ```
 GET  /api/status          → lastRefresh, lastSettlementChange, meta
-GET  /api/shortlist       → current + calibrated shortlist
+GET  /api/shortlist       → { current, calibrated, context_raw, comparison }
 GET  /api/stats           → performance (per method, per market)
 GET  /api/predictions     → raw JSONL tail
 GET  /api/conflicts       → settlement conflicts
+GET  /api/context/index   → backtest index (_index.json)
+GET  /api/context/backtest?league=&season= → backtest JSONL as JSON array
 POST /api/refresh         → trigger full refresh
 POST /api/settle          → trigger settlement sweep
 POST /api/pre-kickoff     → trigger pre-KO odds capture
 ```
 
 `lastSettlementChange` in `/api/status` updates only when at least one prediction is written. Null if no settlements have occurred since container start.
+
+---
+
+## Frontend — index.html rules
+
+- `public/index.html` is baked into the Docker image — **browser refresh alone does not pick up changes**. Full redeploy always required.
+- Model filter chips: **All | Current | Calibrated | Context** — the Context chip has no sub-label. Do not add "paper", opacity spans, or any annotation to the chip text.
+- `getActiveShortlist()` handles all four states: `current`, `calibrated`, `context_raw`, and `all` (smart merge)
+- All-mode merge key: `fixtureId + direction + method` — same fixture can appear under multiple models in All mode if directions differ
+- `_models[]` array attached to merged rows for badge rendering — `Cur` (cyan), `Cal` (green), `Ctx` (indigo)
+- `shortlistData` state shape: `{ current: [], calibrated: [], context_raw: [], comparison: {} }`
 
 ---
 
@@ -140,6 +192,9 @@ POST /api/pre-kickoff     → trigger pre-KO odds capture
 - Unicode box-drawing characters in bash heredocs cause parse errors on some shells. Use plain ASCII in scripts or write files via tool.
 - `docker build` creates a `goalscout` image that Compose ignores. Always use `docker compose up --build`.
 - `public/index.html` is baked into the image — browser refresh alone does not pick up frontend changes. Full redeploy required.
-- The pre-KO cron and settlement cron both run at `*/30`. They can fire simultaneously but target different prediction states (pre-KO targets pending near kickoff, settlement targets 135+ min post-kickoff) so race conditions are extremely unlikely.
+- The pre-KO cron and settlement cron both run at `*/30`. They can fire simultaneously but target different prediction states so race conditions are extremely unlikely.
 - `teamsMatch()` uses token overlap with a 40% threshold. Home/away swap fallback exists — can cause silent wrong-result if teams are in wrong order. Watch for this.
 - `ABANDON_AFTER_HOURS` is set to 72 as a safety net for the kickoff estimation logic.
+- **`calibration.js` vs `context-calibration.js`**: naming these the same breaks the current/calibrated model silently. The name collision was introduced in Stage 9 and required a hotfix. Never rename `calibration.js`.
+- `context_raw` "No odds" for a fixture is not always a bug — it can mean the Odds API had odds for the opposite direction to what context_raw predicted (market disagrees with the model's direction call).
+- `estimateKickoffUTC` pitfall: early-morning AEST times can map to the wrong UTC day. `ABANDON_AFTER_HOURS` set to 72 as safety net.

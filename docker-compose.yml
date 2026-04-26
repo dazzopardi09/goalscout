@@ -13,6 +13,7 @@ services:
       - FLARESOLVERR_URL=http://192.168.178.5:8191/v1
       - DISPLAY_TIMEZONE=Australia/Melbourne
       # Active Odds API keys (3 remaining after exhausted keys removed)
+      - SKIP_STARTUP_REFRESH=false  # set true during dev deployments
       - ODDS_API_KEYS=8eef29d836813cf5b5c949ae74aab60f
       # UK only — Bet365, Pinnacle, William Hill, Betfair Exchange etc.
       - ODDS_REGIONS=au,uk

@@ -164,4 +164,73 @@ function hasCoverage(leagueSlug) {
   return !!SLUG_TO_FD_CODE[leagueSlug];
 }
 
-module.exports = { lookupResult, hasCoverage, SLUG_TO_FD_CODE };
+// Separate cache for rolling results — wider date range, separate TTL
+const rollingCache = new Map();
+const ROLLING_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
+ 
+/**
+ * Fetch the last 56 days of FINISHED matches for a competition.
+ * Used by context_raw paper-tracking (rolling last-6 stats per team).
+ * This is SEPARATE from fetchResults() which only covers 4 days for settlement.
+ *
+ * Returns [{ homeTeam, awayTeam, homeGoals, awayGoals, utcDate }] or null.
+ * Return format is identical to fetchResults() — callers can treat them
+ * the same way.
+ *
+ * Cache TTL: 4h per competition per calendar day.
+ * Rate impact: 2 additional API calls per 6h refresh cycle (England + Germany).
+ * Free-tier budget: 10 req/min — no issue.
+ *
+ * @param {string} competitionCode - FD.org competition code e.g. 'PL', 'BL1'
+ */
+async function fetchRollingResults(competitionCode) {
+  const cacheKey = `rolling__${competitionCode}__${getTodayUTC()}`;
+  const cached = rollingCache.get(cacheKey);
+  if (cached && (Date.now() - cached.fetchedAt) < ROLLING_CACHE_TTL) {
+    return cached.data;
+  }
+ 
+  const token = config.FOOTBALL_DATA_API_KEY;
+  if (!token) {
+    console.warn('[football-data] FOOTBALL_DATA_API_KEY not configured — cannot fetch rolling results');
+    return null;
+  }
+ 
+  // 56-day lookback: enough for every team to have played at least 6-8 matches
+  const from = new Date(Date.now() - 56 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const to   = new Date().toISOString().slice(0, 10);
+  const url  = `${BASE_URL}/competitions/${competitionCode}/matches?status=FINISHED&dateFrom=${from}&dateTo=${to}`;
+ 
+  try {
+    const resp = await fetch(url, {
+      headers: { 'X-Auth-Token': token },
+      signal: AbortSignal.timeout(10000),
+    });
+ 
+    if (!resp.ok) {
+      console.warn(`[football-data] rolling fetch ${competitionCode}: HTTP ${resp.status}`);
+      return null;
+    }
+ 
+    const raw = await resp.json();
+    const matches = (raw.matches || [])
+      .filter(m => m.score?.fullTime?.home != null && m.score?.fullTime?.away != null)
+      .map(m => ({
+        homeTeam:  m.homeTeam.name,
+        awayTeam:  m.awayTeam.name,
+        homeGoals: m.score.fullTime.home,
+        awayGoals: m.score.fullTime.away,
+        utcDate:   m.utcDate,
+      }));
+ 
+    console.log(`[football-data] rolling: ${matches.length} matches loaded for ${competitionCode} (${from} → ${to})`);
+    rollingCache.set(cacheKey, { data: matches, fetchedAt: Date.now() });
+    return matches;
+ 
+  } catch (err) {
+    console.warn(`[football-data] rolling fetch ${competitionCode}: ${err.message}`);
+    return null;
+  }
+}
+
+module.exports = { lookupResult, hasCoverage, SLUG_TO_FD_CODE, fetchRollingResults };
