@@ -145,6 +145,11 @@ function parseCSV(csvPath) {
     const oddsHomeClose = parseFloat(row.B365CH || row.PSH) || null;
     const oddsAwayClose = parseFloat(row.B365CA || row.PSA) || null;
 
+    // Closing O/U 2.5 odds — used for CLV in the backtest
+    // Column names: B365C>2.5, PC>2.5, AvgC>2.5 (C = closing)
+    const oddsO25Close = parseFloat(row['B365C>2.5'] || row['PC>2.5'] || row['AvgC>2.5']) || null;
+    const oddsU25Close = parseFloat(row['B365C<2.5'] || row['PC<2.5'] || row['AvgC<2.5']) || null;
+
     matches.push({
       date,
       dateStr:   row.Date,
@@ -166,6 +171,8 @@ function parseCSV(csvPath) {
       oddsDraw,
       oddsHomeClose,
       oddsAwayClose,
+      oddsO25Close,
+      oddsU25Close,
     });
   }
 
