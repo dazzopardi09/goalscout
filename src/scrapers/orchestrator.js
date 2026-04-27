@@ -458,8 +458,30 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
         }
  
         if (contextItems.length > 0) {
-          // Logs predictions with calibration fields, deduplication, and status:'pending'.
-          // Filters to England/Germany internally; skips scored.skip === true.
+          // Assign selectionType BEFORE logging so it is stored in predictions.jsonl.
+          // Direction-aware: key = match.id + '__' + ctxScored.direction.
+          // Stored at log time so Performance can group settled results without
+          // recomputing historical shortlist state.
+          {
+            const curDirKeys = new Set(currentShortlisted.map(m => m.id + '__' + (m.direction || 'none')));
+            const calDirKeys = new Set(calibratedShortlisted.map(m => m.id + '__' + (m.direction || 'none')));
+            const curIds = new Set(currentShortlisted.map(m => m.id));
+            const calIds = new Set(calibratedShortlisted.map(m => m.id));
+            for (const item of contextItems) {
+              if (item.scored.skip) continue;
+              const dir = item.scored.direction || 'none';
+              const sameKey = item.match.id + '__' + dir;
+              if (curDirKeys.has(sameKey) || calDirKeys.has(sameKey)) {
+                item.selectionType = 'context_confirms';
+              } else if (curIds.has(item.match.id) || calIds.has(item.match.id)) {
+                item.selectionType = 'context_disagrees';
+              } else {
+                item.selectionType = 'context_only';
+              }
+            }
+          }
+          // Logs predictions with calibration fields, deduplication, status:'pending',
+          // and selectionType. Filters to England/Germany; skips scored.skip === true.
           logContextPredictions(contextItems);
         }
  
@@ -475,6 +497,13 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
         // Only active (non-skipped) predictions with odds are included.
         // This array is independent of current/calibrated — it is read-only
         // from their perspective and does not affect their shortlists.
+        const ctxSelectionTypeMap = new Map();
+        for (const i of contextItems) {
+          if (!i.scored.skip && i.selectionType) {
+            ctxSelectionTypeMap.set(i.match.id + '__' + (i.scored.direction || 'none'), i.selectionType);
+          }
+        }
+
         contextShortlisted = contextItems
           .filter(i => !i.scored.skip)
           .map(({ match, scored: ctxScored, homeRolling, awayRolling }) => {
@@ -512,6 +541,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
               contextScored:   ctxScored,
               homeRollingSnap: homeRolling,
               awayRollingSnap: awayRolling,
+              selectionType: ctxSelectionTypeMap.get(match.id + '__' + (ctxScored.direction || 'none')) || null,
             };
           });
 
@@ -581,6 +611,32 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
         overlapIds: [...currentIds].filter(id => calibratedIds.has(id)),
         currentOnlyIds: [...currentIds].filter(id => !calibratedIds.has(id)),
         calibratedOnlyIds: [...calibratedIds].filter(id => !currentIds.has(id)),
+        // context_raw overlap fields — direction-aware (key = id + '__' + direction).
+        allThreeOverlapIds: contextShortlisted
+          .filter(c => {
+            const key = c.id + '__' + (c.direction || 'none');
+            return currentShortlisted.some(m => m.id + '__' + (m.direction || 'none') === key) &&
+                   calibratedShortlisted.some(m => m.id + '__' + (m.direction || 'none') === key);
+          })
+          .map(c => c.id + '__' + (c.direction || 'none')),
+        currentContextOverlapIds: contextShortlisted
+          .filter(c => {
+            const key = c.id + '__' + (c.direction || 'none');
+            return currentShortlisted.some(m => m.id + '__' + (m.direction || 'none') === key);
+          })
+          .map(c => c.id + '__' + (c.direction || 'none')),
+        calibratedContextOverlapIds: contextShortlisted
+          .filter(c => {
+            const key = c.id + '__' + (c.direction || 'none');
+            return calibratedShortlisted.some(m => m.id + '__' + (m.direction || 'none') === key);
+          })
+          .map(c => c.id + '__' + (c.direction || 'none')),
+        contextOnlyIds: contextShortlisted
+          .filter(c => c.selectionType === 'context_only')
+          .map(c => c.id + '__' + (c.direction || 'none')),
+        contextDisagreementIds: contextShortlisted
+          .filter(c => c.selectionType === 'context_disagrees')
+          .map(c => c.id + '__' + (c.direction || 'none')),
       },
     });
     writeJSON(config.META_FILE, {

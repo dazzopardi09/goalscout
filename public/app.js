@@ -1,524 +1,18 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GoalScout — Match Investigation Dashboard</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
-<style>
-/* ── Context Research — drawer ───────────────────────────────── */
-#ctxDrawerOverlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,.55);
-  z-index: 200;
-  display: none;
-}
-#ctxDrawer {
-  position: fixed; top: 0; right: 0; bottom: 0;
-  width: min(520px, 94vw);
-  background: #0f1623;
-  border-left: 1px solid rgba(255,255,255,.08);
-  z-index: 201;
-  overflow-y: auto;
-  padding: 24px 20px;
-  transform: translateX(100%);
-  transition: transform .22s cubic-bezier(.4,0,.2,1);
-  display: none;
-}
-#ctxDrawer.open { transform: translateX(0); }
+// public/app.js
+// ─────────────────────────────────────────────────────────────
+// GoalScout v3 — all frontend JavaScript.
+// Extracted from index.html inline <script> block.
+//
+// Sections:
+//   State + helpers
+//   Shortlist rendering
+//   Performance tab (Current / Calibrated / Context)
+//   Context Research tab (backtest viewer)
+//   Init + polling
+// ─────────────────────────────────────────────────────────────
 
-/* ── Context Research — panels ───────────────────────────────── */
-.ctx-panel {
-  border: 1px solid rgba(255,255,255,.07);
-  background: rgba(255,255,255,.02);
-  border-radius: 20px;
-  padding: 18px 20px;
-  margin-bottom: 12px;
-}
-.ctx-panel-head {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .14em;
-  color: #94a3b8;
-  margin-bottom: 14px;
-}
-
-/* ── Flag table ──────────────────────────────────────────────── */
-.ctx-flag-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-.ctx-flag-table thead th {
-  padding: 6px 8px;
-  text-align: left;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: .14em;
-  color: #66758c;
-  border-bottom: 1px solid rgba(255,255,255,.06);
-  font-weight: 500;
-}
-.ctx-flag-table tbody tr {
-  border-bottom: 1px solid rgba(255,255,255,.04);
-}
-.ctx-flag-table tbody td {
-  padding: 8px 8px;
-  color: #cbd5e1;
-  vertical-align: middle;
-}
-
-/* ── Predictions table ───────────────────────────────────────── */
-.ctx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.ctx-table thead th {
-  padding: 10px 8px;
-  text-align: left;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: .14em;
-  color: #66758c;
-  border-bottom: 1px solid rgba(255,255,255,.08);
-  font-weight: 500;
-  white-space: nowrap;
-  background: rgba(255,255,255,.02);
-}
-.ctx-table tbody tr {
-  border-bottom: 1px solid rgba(255,255,255,.04);
-  transition: background .1s;
-}
-.ctx-table tbody tr:hover { background: rgba(255,255,255,.03); }
-.ctx-table tbody td { padding: 10px 8px; vertical-align: middle; }
-
-/* ── Pagination ──────────────────────────────────────────────── */
-.ctx-pagination {
-  display: flex; align-items: center; justify-content: center;
-  gap: 14px; padding: 16px 0; margin-top: 4px;
-}
-.ctx-page-btn {
-  border: 1px solid rgba(255,255,255,.1);
-  background: rgba(255,255,255,.04);
-  color: #94a3b8;
-  border-radius: 10px;
-  padding: 8px 16px;
-  font-size: 12px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.ctx-page-btn:hover:not(:disabled) { background: rgba(255,255,255,.08); color: #e2e8f0; }
-.ctx-page-btn:disabled { opacity: .35; cursor: not-allowed; }
-
-/* ── Drawer sections ─────────────────────────────────────────── */
-.ctx-drawer-section {
-  border-top: 1px solid rgba(255,255,255,.07);
-  padding: 14px 0;
-}
-.ctx-drawer-title {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: .14em;
-  color: #66758c;
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
-/* ── Gameweek + edge chart containers ────────────────────────── */
-.ctx-chart-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* ── Selector strip ──────────────────────────────────────────── */
-.ctx-selector-strip {
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 14px 0 10px;
-}
-.ctx-selector-label {
-  font-size: 11px; color: #66758c;
-  text-transform: uppercase; letter-spacing: .14em;
-}
-.ctx-selector-meta {
-  font-size: 11px; color: #3d4f6a;
-  font-family: 'JetBrains Mono', monospace;
-  padding-bottom: 12px;
-}
-
-/* ── Filter bar ──────────────────────────────────────────────── */
-.ctx-filter-row {
-  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-.ctx-chip {
-  border: 1px solid rgba(255,255,255,.1);
-  background: rgba(255,255,255,.03);
-  color: #94a3b8;
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 12px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.ctx-chip:hover { border-color: rgba(255,255,255,.18); color: #cbd5e1; }
-.ctx-chip.active {
-  border-color: rgba(52,211,153,.3);
-  background: rgba(16,185,129,.15);
-  color: #bbf7d0;
-}
-.ctx-flag-checks {
-  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-}
-.ctx-flag-check-label {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 11px; color: #66758c; cursor: pointer;
-  border: 1px solid rgba(255,255,255,.07);
-  background: rgba(255,255,255,.02);
-  border-radius: 8px; padding: 5px 9px;
-}
-.ctx-flag-check-label:hover { border-color: rgba(255,255,255,.14); color: #94a3b8; }
-.ctx-flag-check-label input { margin: 0; accent-color: #34d399; cursor: pointer; }
-.ctx-gw-wrap {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-}
-.ctx-gw-slider {
-  -webkit-appearance: none; appearance: none;
-  height: 4px; border-radius: 2px;
-  background: rgba(255,255,255,.1); cursor: pointer; width: 90px;
-}
-.ctx-gw-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 14px; height: 14px;
-  border-radius: 50%; background: #34d399; cursor: pointer;
-}
-.ctx-count {
-  font-size: 11px; color: #3d4f6a;
-  padding-bottom: 10px;
-}
-.ctx-tip { cursor: help; color: #3d4f6a; font-size: 11px; }
-
-/* ── Phase note (reuse perf style if available, else define) ── */
-.ctx-phase-note {
-  display: flex; align-items: flex-start; gap: 10px;
-  border: 1px solid rgba(99,102,241,.2);
-  background: rgba(99,102,241,.06);
-  border-radius: 14px; padding: 14px 16px;
-  font-size: 12px; color: #94a3b8; line-height: 1.6;
-  margin-top: 14px;
-}
-.ctx-phase-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: #818cf8; margin-top: 4px; flex-shrink: 0;
-}
-</style>
-</head>
-<body>
-<div class="app">
-
-  <!-- ── Hero ── -->
-  <section class="hero">
-    <div class="hero-inner">
-      <div>
-        <div class="brand">
-          <h1>GoalScout<span>.v3</span></h1>
-          <span class="pill">probability engine</span>
-        </div>
-        <p>Directional probability engine. Rates each match as Over 2.5 or Under 2.5, calculates fair odds, and identifies edge vs market price.</p>
-      </div>
-      <div class="hero-right">
-        <div class="status">
-          <span class="dot" id="statusDot"></span>
-          <span id="statusText">Loading...</span>
-        </div>
-        <button class="btn" id="refreshBtn" onclick="triggerRefresh()">↻ Refresh</button>
-      </div>
-    </div>
-  </section>
-  <div class="loading-bar" id="loadingBar"></div>
-
-  <!-- ── Tab bar ── -->
-  <div class="tab-bar">
-    <button class="tab-btn active" id="tabShortlist" onclick="switchTab('shortlist')">📋 Shortlist</button>
-    <button class="tab-btn" id="tabPerf" onclick="switchTab('perf')">📊 Performance</button>
-    <button class="tab-btn" id="tabContext" onclick="switchTab('context')">🔬 Research</button>
-    <button class="tab-btn tab-btn--right" id="tabSettle" onclick="triggerSettle(this)">↻ Settle now</button>
-  </div>
-
-  <!-- ════════════════════════════════════════════════════════
-       SHORTLIST PANEL
-       ════════════════════════════════════════════════════════ -->
-  <div id="shortlistPanel">
-
-    <!-- Stats bar -->
-    <div class="stats-bar">
-      <div>
-        <div class="stats-bar__count" id="statShortlisted">—</div>
-        <div class="stats-bar__label">Shortlisted</div>
-      </div>
-      <div class="stats-bar__divider"></div>
-      <div class="stats-bar__meta" id="statUpdated">—</div>
-    </div>
-
-    <!-- Filters -->
-    <section class="filters">
-      <div class="filters-inner">
-        <div class="filter-row">
-          <div class="filter-group">
-            <span class="filter-label">Model</span>
-            <button class="filter-chip active" data-group="method" data-val="all">All</button>
-            <button class="filter-chip" data-group="method" data-val="current">Current</button>
-            <button class="filter-chip" data-group="method" data-val="calibrated">Calibrated</button>
-          </div>
-          <div class="filter-group">
-            <span class="filter-label">Grade</span>
-            <button class="filter-chip active" data-group="grade" data-val="all">All</button>
-            <button class="filter-chip" data-group="grade" data-val="A+">A+</button>
-            <button class="filter-chip" data-group="grade" data-val="A">A</button>
-            <button class="filter-chip" data-group="grade" data-val="B">B</button>
-          </div>
-          <div class="filter-group">
-            <span class="filter-label">Direction</span>
-            <button class="filter-chip active" data-group="direction" data-val="all">All</button>
-            <button class="filter-chip" data-group="direction" data-val="o25">O2.5</button>
-            <button class="filter-chip" data-group="direction" data-val="u25">U2.5</button>
-          </div>
-        </div>
-        <div class="filter-group">
-          <span class="filter-label">League</span>
-          <select class="league-select" id="leagueFilter" onchange="applyFilters()">
-            <option value="all">All leagues</option>
-          </select>
-        </div>
-      </div>
-    </section>
-
-    <!-- Shortlist accordion -->
-    <section id="tableShellSection">
-      <div class="shortlist-wrap" id="shortlistWrap"></div>
-      <div class="empty-state" id="emptyState" style="display:none;text-align:center;padding:4rem 2rem;color:#8b9ab0">
-        <h2 style="font-size:16px;color:#e5edf8;margin-bottom:8px">No matches shortlisted</h2>
-        <p>No bettable matches meet the threshold. Try refreshing.</p>
-      </div>
-    </section>
-
-  </div><!-- /shortlistPanel -->
-
-  <!-- ════════════════════════════════════════════════════════
-       PERFORMANCE PANEL
-       ════════════════════════════════════════════════════════ -->
-  <div id="perfPanel" style="display:none;margin-top:14px">
-
-    <div id="perfLoading" style="text-align:center;padding:2rem;color:#8b9ab0;font-size:14px">
-      Loading performance data...
-    </div>
-
-    <div id="perfContent" style="display:none">
-
-      <!-- Hero strip -->
-      <div class="perf-hero-strip" id="perfSummaryCards"></div>
-
-      <div class="market-tabs" style="margin-bottom:14px">
-        <button class="market-tab active" id="perfMethodCurrent" onclick="switchPerfMethod('current')">Current</button>
-        <button class="market-tab" id="perfMethodCalibrated" onclick="switchPerfMethod('calibrated')">Calibrated</button>
-      </div>
-
-      <!-- Market cards -->
-      <div class="perf-mkt-grid">
-        <div class="perf-mkt-card" id="perfO25Panel"></div>
-        <div class="perf-mkt-card" id="perfU25Panel"></div>
-      </div>
-
-      <!-- Calibration chart -->
-      <div class="calib-card" id="calibCard" style="display:none">
-        <div class="calib-head">
-          <div class="calib-title">Calibration — Predicted vs Actual</div>
-          <div class="calib-badge" id="calibBadge"></div>
-        </div>
-        <div class="calib-sub">Bars show predicted probability bucket vs actual hit rate. Perfect calibration = bars align with diagonal.</div>
-        <div class="calib-bars" id="calibBars"></div>
-        <div class="calib-legend">
-          <div class="cleg"><div class="cleg-dot" style="background:#67e8f9;opacity:.55"></div>Predicted</div>
-          <div class="cleg"><div class="cleg-dot" style="background:#6ee7b7;opacity:.70"></div>Actual (above)</div>
-          <div class="cleg"><div class="cleg-dot" style="background:#f87171;opacity:.60"></div>Actual (below)</div>
-        </div>
-      </div>
-
-      <!-- Settled records -->
-      <div class="settled-wrap">
-        <div class="settled-head-row">
-          <div>
-            <div class="settled-title">Recent Settled</div>
-            <div class="settled-sub">Sorted by settlement date, most recent first</div>
-          </div>
-        </div>
-        <div class="market-tabs">
-          <button class="market-tab active" id="perfTabO25" onclick="switchPerfMarketTab('over_2.5')">Over 2.5 Goals</button>
-          <button class="market-tab" id="perfTabU25" onclick="switchPerfMarketTab('under_2.5')">Under 2.5 Goals</button>
-        </div>
-        <div class="perf-table-wrap">
-          <table class="perf-table" id="perfTable">
-            <thead><tr>
-              <th>Date</th>
-              <th>Match</th>
-              <th>Grade</th>
-              <th>Dir</th>
-              <th style="text-align:right">Model%</th>
-              <th style="text-align:right">Fair</th>
-              <th style="text-align:right">Tip Odds</th>
-              <th style="text-align:right">Edge</th>
-              <th style="text-align:right">Pre-KO</th>
-              <th style="text-align:right">Move%</th>
-              <th style="text-align:right">Close</th>
-              <th style="text-align:right">CLV%</th>
-              <th style="text-align:center">Score</th>
-              <th style="text-align:center">Result</th>
-            </tr></thead>
-            <tbody id="perfTableBody"></tbody>
-          </table>
-        </div>
-        <div class="settled-foot">
-          Move% = tip-time → pre-kickoff price movement. Negative = odds shortened (market agrees).
-          CLV% = how much tip-time beat the closing line. Brier lower = better (0.25 = coin flip).
-        </div>
-      </div>
-
-      <!-- Phase note -->
-      <div class="phase-note">
-        <div class="phase-dot"></div>
-        <div class="phase-text">
-          <strong>Phase 1 — Calibration data collection.</strong>
-          The model needs 200+ settled predictions before calibration metrics are meaningful.
-          Current priority is pipeline accuracy (results source fix) and data collection.
-          Hit rate at this sample size is highly variable — focus on mean edge and CLV trend instead.
-        </div>
-      </div>
-
-    </div><!-- /perfContent -->
-  </div><!-- /perfPanel -->
-
-  <!-- ════════════════════════════════════════════════════════
-       CONTEXT RESEARCH PANEL
-       ════════════════════════════════════════════════════════ -->
-  <div id="contextPanel" style="display:none;margin-top:14px">
-
-    <div id="ctxLoading" style="text-align:center;padding:2rem;color:#8b9ab0;font-size:14px">
-      Loading research data...
-    </div>
-
-    <div id="ctxContent" style="display:none">
-
-      <!-- Selector strip -->
-      <div class="ctx-selector-strip">
-        <span class="ctx-selector-label">Model</span>
-        <span style="font-size:13px;color:#94a3b8;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:7px 12px">context_raw v1.1</span>
-        <span class="ctx-selector-label" style="margin-left:8px">League</span>
-        <span style="font-size:13px;color:#94a3b8;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:7px 12px">England</span>
-        <span class="ctx-selector-label" style="margin-left:8px">Season</span>
-        <span style="font-size:13px;color:#94a3b8;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:7px 12px">2024-25</span>
-      </div>
-      <div class="ctx-selector-meta" id="ctxSelectorMeta"></div>
-
-      <!-- Headline cards -->
-      <div class="perf-hero-strip" id="ctxCards"></div>
-
-      <!-- Filter bar -->
-      <div class="ctx-panel" style="margin-top:4px">
-        <div class="ctx-filter-row">
-          <div class="filter-group">
-            <span class="filter-label">Direction</span>
-            <button class="ctx-chip active" data-ctxgroup="direction" data-ctxval="all" onclick="ctxChipClick(this)">All</button>
-            <button class="ctx-chip" data-ctxgroup="direction" data-ctxval="o25" onclick="ctxChipClick(this)">O2.5</button>
-            <button class="ctx-chip" data-ctxgroup="direction" data-ctxval="u25" onclick="ctxChipClick(this)">U2.5</button>
-          </div>
-          <div class="filter-group">
-            <span class="filter-label">Grade</span>
-            <button class="ctx-chip active" data-ctxgroup="grade" data-ctxval="all" onclick="ctxChipClick(this)">All</button>
-            <button class="ctx-chip" data-ctxgroup="grade" data-ctxval="A+" onclick="ctxChipClick(this)">A+</button>
-            <button class="ctx-chip" data-ctxgroup="grade" data-ctxval="A" onclick="ctxChipClick(this)">A</button>
-            <button class="ctx-chip" data-ctxgroup="grade" data-ctxval="B" onclick="ctxChipClick(this)">B</button>
-          </div>
-          <div class="filter-group">
-            <span class="filter-label">Result</span>
-            <button class="ctx-chip active" data-ctxgroup="result" data-ctxval="all" onclick="ctxChipClick(this)">All</button>
-            <button class="ctx-chip" data-ctxgroup="result" data-ctxval="won" onclick="ctxChipClick(this)">Won</button>
-            <button class="ctx-chip" data-ctxgroup="result" data-ctxval="lost" onclick="ctxChipClick(this)">Lost</button>
-          </div>
-        </div>
-
-        <div class="ctx-filter-row">
-          <span class="filter-label">Flags (AND)</span>
-          <div class="ctx-flag-checks" id="ctxFlagChecks"></div>
-        </div>
-
-        <div class="ctx-filter-row">
-          <span class="filter-label">Gameweek</span>
-          <div class="ctx-gw-wrap">
-            <span style="font-size:12px;color:#66758c">From</span>
-            <input type="range" class="ctx-gw-slider" id="ctxGwMin" min="1" max="38" value="1" oninput="ctxGwChange()">
-            <span style="font-size:12px;color:#66758c">To</span>
-            <input type="range" class="ctx-gw-slider" id="ctxGwMax" min="1" max="38" value="38" oninput="ctxGwChange()">
-            <span id="ctxGwDisplay" style="font-size:12px;color:#94a3b8;min-width:80px">GW 1 – 38</span>
-          </div>
-        </div>
-
-        <div class="ctx-count" id="ctxFilterCount">Loading...</div>
-      </div>
-
-      <!-- Flag performance table -->
-      <div class="ctx-panel">
-        <div id="ctxFlagTable"><div style="color:#66758c;font-size:13px">Loading flag data...</div></div>
-      </div>
-
-      <!-- Charts row -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-        <div class="ctx-panel">
-          <div id="ctxGwChart" class="ctx-chart-wrap"></div>
-        </div>
-        <div class="ctx-panel">
-          <div id="ctxEdgeChart" class="ctx-chart-wrap"></div>
-        </div>
-      </div>
-
-      <!-- Predictions table -->
-      <div class="ctx-panel" style="padding:0;overflow:hidden">
-        <div style="padding:16px 20px 10px;border-bottom:1px solid rgba(255,255,255,.06)">
-          <div class="ctx-panel-head" style="margin-bottom:0">Predictions</div>
-        </div>
-        <div style="overflow-x:auto">
-          <div id="ctxTableWrap"></div>
-        </div>
-      </div>
-
-      <!-- Phase note -->
-      <div class="ctx-phase-note">
-        <div class="ctx-phase-dot"></div>
-        <div>
-          <strong>context_raw — Diagnostic model (Stage 3 complete).</strong>
-          Uses last-6-match rolling stats only. Model is uncalibrated — mean edge overstates real edge.
-          ROI and CLV will improve after context_calibrated (Stage 10). Use this view for signal research,
-          not deployment decisions. Deployment gated on Stage 8 validation framework.
-        </div>
-      </div>
-
-    </div><!-- /ctxContent -->
-  </div><!-- /contextPanel -->
-
-  <!-- ── Detail drawer (context research) ── -->
-  <div id="ctxDrawerOverlay" onclick="closeCtxDrawer()"></div>
-  <div id="ctxDrawer">
-    <div id="ctxDrawerBody"></div>
-  </div>
-
-  <div class="footer">
-    <span>Data: <a href="https://www.soccerstats.com" target="_blank">SoccerSTATS</a> · Odds: <a href="https://the-odds-api.com" target="_blank">The-Odds-API</a> · Not betting advice.</span>
-    <span>GoalScout v3 · Melbourne AEST</span>
-  </div>
-
-</div><!-- /app -->
-
-<script>
 // ── State ─────────────────────────────────────────────────────
-let shortlistData = { current: [], calibrated: [], comparison: {} };
+let shortlistData = { current: [], calibrated: [], context_raw: [], comparison: {} };
 let filters = { method: 'all', grade: 'all', direction: 'all', league: 'all' };
 let currentSort = { key: 'kickoff', dir: 'asc' };
 let perfData = null;
@@ -627,31 +121,68 @@ function fmtDate(m) {
 }
 
 function getActiveShortlist() {
-  if (filters.method === 'current') return shortlistData.current || [];
-  if (filters.method === 'calibrated') return shortlistData.calibrated || [];
+  if (filters.method === 'current')     return shortlistData.current     || [];
+  if (filters.method === 'calibrated')  return shortlistData.calibrated  || [];
+  if (filters.method === 'context_raw') return shortlistData.context_raw || [];
 
-  const map = new Map();
-  const combined = [
-    ...(shortlistData.current || []),
-    ...(shortlistData.calibrated || [])
-  ];
+  // All mode: smart merge
+  // Rules (display-only — no effect on logging/shortlist.json/performance):
+  //   1. cur+cal+ctx all same fixture+direction → one merged row, badge all three
+  //   2. cur+cal agree, ctx disagrees direction → merged cur/cal row + separate ctx row
+  //   3. cur+cal disagree → separate rows; ctx merges into whichever direction it agrees with
+  //   4. ctx only → own row with Context badge
+  // _models[] attached to each output row for badge rendering in buildMatchRow
 
-  combined.forEach(m => {
-    const key = `${m.id}__${m.direction || 'unknown'}`;
-    const existing = map.get(key);
+  const current    = shortlistData.current     || [];
+  const calibrated = shortlistData.calibrated  || [];
+  const ctxRaw     = shortlistData.context_raw || [];
 
-    if (!existing) {
-      map.set(key, m);
-    } else {
-      const hasOdds = m.odds && (m.odds.o25 || m.odds.u25);
-      const existingHasOdds = existing.odds && (existing.odds.o25 || existing.odds.u25);
-      if (!existingHasOdds && hasOdds) {
-        map.set(key, m);
-      }
+  function makeIdx(list) {
+    const m = new Map();
+    list.forEach(r => m.set(r.id + '__' + (r.direction || 'none'), r));
+    return m;
+  }
+
+  const curIdx = makeIdx(current);
+  const calIdx = makeIdx(calibrated);
+  const ctxIdx = makeIdx(ctxRaw);
+
+  const output  = [];
+  const ctxUsed = new Set();
+
+  // All unique fixture+direction pairs across current and calibrated
+  const ccKeys = new Set([
+    ...current.map(r => r.id + '__' + (r.direction || 'none')),
+    ...calibrated.map(r => r.id + '__' + (r.direction || 'none')),
+  ]);
+
+  ccKeys.forEach(key => {
+    const curRow = curIdx.get(key);
+    const calRow = calIdx.get(key);
+    const base   = calRow || curRow;
+    const models = [];
+    if (curRow) models.push('current');
+    if (calRow) models.push('calibrated');
+
+    // context_raw agrees if same fixture + same direction
+    const ctxAgree = ctxIdx.get(key);
+    if (ctxAgree) {
+      models.push('context_raw');
+      ctxUsed.add(key);
+    }
+
+    output.push(Object.assign({}, base, { _models: models }));
+  });
+
+  // context_raw entries not consumed by merging — show as own rows
+  ctxRaw.forEach(r => {
+    const key = r.id + '__' + (r.direction || 'none');
+    if (!ctxUsed.has(key)) {
+      output.push(Object.assign({}, r, { _models: ['context_raw'] }));
     }
   });
 
-  return Array.from(map.values());
+  return output;
 }
 
 // ── Status polling ─────────────────────────────────────────────
@@ -697,12 +228,13 @@ async function loadShortlist() {
     var payload = await r.json();
 
     if (Array.isArray(payload)) {
-      shortlistData = { current: payload, calibrated: [], comparison: {} };
+      shortlistData = { current: payload, calibrated: [], context_raw: [], comparison: {} };
     } else {
       shortlistData = {
-        current: payload.current || [],
-        calibrated: payload.calibrated || [],
-        comparison: payload.comparison || {}
+        current:     payload.current     || [],
+        calibrated:  payload.calibrated  || [],
+        context_raw: payload.context_raw || [],
+        comparison:  payload.comparison  || {}
       };
     }
 
@@ -804,8 +336,11 @@ function renderShortlist() {
   if (!data.length) {
     wrap.innerHTML = '';
     empty.style.display = 'block';
-    empty.querySelector('h2').textContent = `No ${filters.method} matches shortlisted`;
-    empty.querySelector('p').textContent = `No bettable matches meet the ${filters.method} model threshold. Try refreshing.`;
+    var methodLabel = filters.method === 'context_raw' ? 'context (paper)' : filters.method;
+    empty.querySelector('h2').textContent = `No ${methodLabel} matches shortlisted`;
+    empty.querySelector('p').textContent  = filters.method === 'context_raw'
+      ? 'No England or Germany fixtures met the context_raw threshold. Try refreshing.'
+      : `No bettable matches meet the ${methodLabel} model threshold. Try refreshing.`;
     return;
   }
 
@@ -883,6 +418,25 @@ function buildMatchRow(m, i) {
     edgeHtml = `<div class="edge-box"><div class="edge-label">Edge</div><div class="edge-val" style="color:${ec}">${edge > 0 ? '+' : ''}${edge.toFixed(1)}%</div></div>`;
   }
 
+  var leagueLabel = m.league || m.leagueSlug || '—';
+
+  // Model badges — only rendered in All mode when _models is populated
+  var modelBadgesHtml = '';
+  if (m._models && m._models.length > 0 && filters.method === 'all') {
+    var BADGE_CFG = {
+      current:     { label: 'Cur',  color: '#67e8f9', bg: 'rgba(103,232,249,.1)',  border: 'rgba(103,232,249,.25)' },
+      calibrated:  { label: 'Cal',  color: '#6ee7b7', bg: 'rgba(110,231,183,.1)',  border: 'rgba(110,231,183,.25)' },
+      context_raw: { label: 'Ctx',  color: '#818cf8', bg: 'rgba(129,140,248,.1)',  border: 'rgba(129,140,248,.25)' },
+    };
+    modelBadgesHtml = '<div style="display:flex;gap:3px;margin-top:3px;flex-wrap:wrap">' +
+      m._models.map(function(mdl) {
+        var cfg = BADGE_CFG[mdl] || { label: mdl, color: '#94a3b8', bg: 'transparent', border: 'rgba(255,255,255,.1)' };
+        return '<span style="font-size:8px;font-weight:700;letter-spacing:.08em;color:' + cfg.color +
+          ';background:' + cfg.bg + ';border:1px solid ' + cfg.border +
+          ';border-radius:4px;padding:1px 4px;text-transform:uppercase">' + cfg.label + '</span>';
+      }).join('') +
+    '</div>';
+  }
   var hCS = fmtPct(m.home?.csPct), aCS = fmtPct(m.away?.csPct);
   var hFTS = fmtPct(m.home?.ftsPct), aFTS = fmtPct(m.away?.ftsPct);
   var hO = fmtPct(m.home?.o25pct), aO = fmtPct(m.away?.o25pct);
@@ -914,9 +468,10 @@ function buildMatchRow(m, i) {
     <div><span class="badge ${gradeClass(m.grade)}">${m.grade}</span></div>
     <div>${dirBadge}</div>
     <div class="col-ko">${ko}<div class="ko-date">${dt}</div></div>
-    <div class="col-league"><span title="${m.league || ''}">${m.league || m.leagueSlug || '—'}</span></div>
+    <div class="col-league"><span title="${leagueLabel}">${leagueLabel}</span></div>
     <div class="col-match">
       <div class="match-title">${m.homeTeam} <span style="color:#66758c">vs</span> ${m.awayTeam}</div>
+      ${modelBadgesHtml}
     </div>
     <div>${oddsHtml}</div>
     <div>${edgeHtml}</div>
@@ -1079,12 +634,22 @@ async function triggerSettle(btn) {
 // ── Performance ───────────────────────────────────────────────
 function switchPerfMethod(method) {
   statsMethod = method;
+  var isCtx = method === 'context_raw';
   document.getElementById('perfMethodCurrent').className =
     'market-tab' + (method === 'current' ? ' active' : '');
   document.getElementById('perfMethodCalibrated').className =
     'market-tab' + (method === 'calibrated' ? ' active' : '');
+  document.getElementById('perfMethodContext').className =
+    'market-tab' + (isCtx ? ' active' : '');
 
-  if (statsData) renderPerformance(statsData);
+  // Show the correct content pane
+  document.getElementById('perfContent').style.display    = isCtx ? 'none' : '';
+  document.getElementById('ctxPerfContent').style.display = isCtx ? '' : 'none';
+
+  if (statsData) {
+    if (isCtx) renderCtxPerfSection(statsData);
+    else renderPerformance(statsData);
+  }
 }
 
 function switchPerfMarketTab(market) {
@@ -1103,6 +668,7 @@ function switchPerfMarketTab(market) {
 async function loadPerformance() {
   document.getElementById('perfLoading').style.display = 'block';
   document.getElementById('perfContent').style.display = 'none';
+  document.getElementById('ctxPerfContent').style.display = 'none';
 
   try {
     const r = await fetch('/api/stats');
@@ -1202,7 +768,10 @@ function renderPerformance(d) {
   renderPerfTable(methodData.recentSettled || []);
 
   document.getElementById('perfLoading').style.display = 'none';
-  document.getElementById('perfContent').style.display = 'block';
+  var isCtxActive = statsMethod === 'context_raw';
+  document.getElementById('perfContent').style.display    = isCtxActive ? 'none' : 'block';
+  document.getElementById('ctxPerfContent').style.display = isCtxActive ? 'block' : 'none';
+  if (isCtxActive) { renderCtxPerfSection(d); return; }
 }
 
 function renderPerfTable(all) {
@@ -1299,12 +868,12 @@ init();
 
 // ── Constants ─────────────────────────────────────────────────
 var FLAG_META = {
-  strong_two_sided_over:    { key: 'strong_two_sided_over',    label: 'Strong Two-Sided Over',   abbr: 'STO',  role: 'attractor',  expected: '↑ O2.5' },
-  both_leaky_defence:       { key: 'both_leaky_defence',       label: 'Both Leaky Defence',       abbr: 'BLD',  role: 'attractor',  expected: '↑ O2.5' },
-  concede_driven_over:      { key: 'concede_driven_over',      label: 'Concede Driven Over',      abbr: 'CDO',  role: 'suppressor', expected: '↓ O2.5' },
-  one_sided_over_risk:      { key: 'one_sided_over_risk',      label: 'One-Sided Over Risk',      abbr: 'OSIR', role: 'suppressor', expected: '↓ O2.5' },
-  low_attack_under_support: { key: 'low_attack_under_support', label: 'Low Attack Under Support', abbr: 'LAUS', role: 'suppressor', expected: '↓ O2.5' },
-  both_weak_attack:         { key: 'both_weak_attack',         label: 'Both Weak Attack',         abbr: 'BWA',  role: 'suppressor', expected: '↓ O2.5' },
+  strong_two_sided_over:    { key: 'strong_two_sided_over',    label: 'Strong Two-Sided Over',   abbr: 'STO',  role: 'attractor',  expected: '↑ O2.5', tooltip: 'STO — Strong Two-Sided Over: both teams show recent attacking strength and O2.5 frequency. Supports O2.5.' },
+  both_leaky_defence:       { key: 'both_leaky_defence',       label: 'Both Leaky Defence',       abbr: 'BLD',  role: 'attractor',  expected: '↑ O2.5', tooltip: 'BLD — Both Leaky Defence: both teams conceding heavily recently despite scoring. Supports O2.5.' },
+  concede_driven_over:      { key: 'concede_driven_over',      label: 'Concede Driven Over',      abbr: 'CDO',  role: 'suppressor', expected: '↓ O2.5', tooltip: 'CDO — Concede Driven Over: overs driven by conceding, not scoring. Underdog concedes heavily but doesn\'t score — suppresses O2.5.' },
+  one_sided_over_risk:      { key: 'one_sided_over_risk',      label: 'One-Sided Over Risk',      abbr: 'OSIR', role: 'suppressor', expected: '↓ O2.5', tooltip: 'OSIR — One-Sided Over Risk: only one team has strong attacking output. The other may not contribute. Suppresses O2.5.' },
+  low_attack_under_support: { key: 'low_attack_under_support', label: 'Low Attack Under Support', abbr: 'LAUS', role: 'suppressor', expected: '↓ O2.5', tooltip: 'LAUS — Low Attack Under Support: both teams show weak attacking output and high FTS rate. Supports U2.5, suppresses O2.5.' },
+  both_weak_attack:         { key: 'both_weak_attack',         label: 'Both Weak Attack',         abbr: 'BWA',  role: 'suppressor', expected: '↓ O2.5', tooltip: 'BWA — Both Weak Attack: both teams averaging under 1 goal scored per game recently. Suppresses O2.5.' },
 };
 
 // ── State ─────────────────────────────────────────────────────
@@ -1315,63 +884,173 @@ var ctxState = {
   index:         null,
   loaded:        false,
   loading:       false,
+  loadedSeason:  null,      // tracks what dataset is currently in memory
   currentLeague: 'england',
-  currentSeason: '2024_25',
+  currentSeason: 'all',     // 'all' = aggregate, or e.g. '2024_25'
   page:          0,
   pageSize:      50,
   drawerRow:     null,
   filters: {
-    direction: 'all',
-    grade:     'all',
-    result:    'all',
-    flags:     [],
-    gwMin:     1,
-    gwMax:     38,
+    direction:  'all',
+    grade:      'all',
+    result:     'all',
+    flags:      [],
+    gwMin:      1,
+    gwMax:      38,
+    viewMode:   'standard',  // 'standard' | 'gameweek' (aggregate mode only)
+    seasonSort: 'newest',    // 'newest' | 'oldest' (gameweek mode only)
   },
 };
 
 // ── Init ──────────────────────────────────────────────────────
 async function initContextResearch() {
   if (ctxState.loading) return;
-  if (ctxState.loaded) { renderCtx(); return; }
+  // If already loaded the correct season, just render
+  if (ctxState.loaded && ctxState.loadedSeason === ctxState.currentSeason) {
+    renderCtx();
+    return;
+  }
 
+  // Phase 1: load index (once per session)
+  if (!ctxState.index) {
+    document.getElementById('ctxLoading').style.display = 'block';
+    document.getElementById('ctxContent').style.display = 'none';
+    document.getElementById('ctxLoading').textContent = 'Loading index...';
+    try {
+      var ir = await fetch('/api/context/index');
+      ctxState.index = await ir.json();
+    } catch (e) {
+      document.getElementById('ctxLoading').textContent = '⚠ Failed to load index: ' + e.message;
+      return;
+    }
+  }
+
+  // Phase 2: load backtest data for selected season
+  await loadContextSeason(ctxState.currentSeason);
+}
+
+// ── Season loader — handles single season or aggregate ────────
+async function loadContextSeason(season) {
+  if (ctxState.loading) return;
   ctxState.loading = true;
+  ctxState.loaded  = false;
+
   document.getElementById('ctxLoading').style.display = 'block';
   document.getElementById('ctxContent').style.display = 'none';
+  document.getElementById('ctxLoading').textContent = season === 'all'
+    ? 'Loading all seasons...'
+    : 'Loading ' + season.replace('_', '-') + '...';
 
   try {
-    // Load index metadata
-    var ir = await fetch('/api/context/index');
-    ctxState.index = await ir.json();
+    var allRows;
 
-    // Load backtest rows
-    var br = await fetch('/api/context/backtest?league=' + ctxState.currentLeague + '&season=' + ctxState.currentSeason);
-    if (!br.ok) throw new Error('Backtest not found: ' + br.status);
-    ctxState.allRows = await br.json();
-    ctxState.settled = ctxState.allRows.filter(function(r) { return r.status === 'settled'; });
+    if (season === 'all') {
+      // Load all seasons for this league in parallel
+      var entries = (ctxState.index.leagues || [])
+        .filter(function(l) { return l.league === ctxState.currentLeague; });
 
-    ctxState.loaded  = true;
-    ctxState.loading = false;
+      var fetches = entries.map(function(entry) {
+        var s = entry.season.replace('-', '_');
+        return fetch('/api/context/backtest?league=' + ctxState.currentLeague + '&season=' + s)
+          .then(function(r) { return r.ok ? r.json() : []; })
+          .catch(function() { return []; });
+      });
 
-    // Build flag checkboxes now that we have data
+      var results = await Promise.all(fetches);
+      // Flatten and sort by date so the table is chronological
+      allRows = results.reduce(function(acc, arr) { return acc.concat(arr); }, [])
+        .sort(function(a, b) { return (a.fixtureDate || '').localeCompare(b.fixtureDate || ''); });
+
+    } else {
+      // Load single season
+      var r = await fetch('/api/context/backtest?league=' + ctxState.currentLeague + '&season=' + season);
+      if (!r.ok) throw new Error('Backtest not found: ' + r.status);
+      allRows = await r.json();
+    }
+
+    ctxState.allRows      = allRows;
+    ctxState.settled      = allRows.filter(function(r) { return r.status === 'settled'; });
+    ctxState.currentSeason = season;
+    ctxState.loadedSeason  = season;
+    ctxState.loaded        = true;
+    ctxState.loading       = false;
+
+    // Reset filters on season change
+    ctxState.filters.direction = 'all';
+    ctxState.filters.grade     = 'all';
+    ctxState.filters.result    = 'all';
+    ctxState.filters.flags     = [];
+    ctxState.page              = 0;
+    // Gameweek mode only makes sense in aggregate — reset when switching to single season
+    if (season !== 'all') ctxState.filters.viewMode = 'standard';
+
+    // Set gameweek slider range from actual data
+    var maxGw = Math.max.apply(null, ctxState.settled.map(function(r) { return r.gameweek || 0; }));
+    if (maxGw > 1) {
+      ctxState.filters.gwMax = maxGw;
+      var minEl = document.getElementById('ctxGwMin');
+      var maxEl = document.getElementById('ctxGwMax');
+      if (minEl) { minEl.max = maxGw; minEl.value = 1; }
+      if (maxEl) { maxEl.max = maxGw; maxEl.value = maxGw; }
+      ctxState.filters.gwMin = 1;
+    }
+
+    // Populate season selector and rebuild flag checkboxes
+    populateSeasonSelector();
     buildFlagCheckboxes();
     applyCtxFilters();
     renderCtx();
 
     document.getElementById('ctxLoading').style.display = 'none';
     document.getElementById('ctxContent').style.display = 'block';
+
   } catch (e) {
     ctxState.loading = false;
-    document.getElementById('ctxLoading').textContent = '⚠ Failed to load research data: ' + e.message;
+    document.getElementById('ctxLoading').textContent = '⚠ Failed to load data: ' + e.message;
     console.error('[ctx] load error:', e);
   }
+}
+
+// ── Season selector population ────────────────────────────────
+function populateSeasonSelector() {
+  var sel = document.getElementById('ctxSeasonSelect');
+  if (!sel || !ctxState.index) return;
+
+  // Preserve current value before rebuilding
+  var current = ctxState.currentSeason;
+
+  sel.innerHTML = '<option value="all">All seasons (aggregate)</option>';
+
+  var entries = (ctxState.index.leagues || [])
+    .filter(function(l) { return l.league === ctxState.currentLeague; })
+    .sort(function(a, b) { return b.season.localeCompare(a.season); }); // newest first
+
+  entries.forEach(function(entry) {
+    var opt = document.createElement('option');
+    opt.value = entry.season.replace('-', '_');
+    opt.textContent = entry.season + '  (' + entry.predictions + ' preds · ' + Math.round(entry.hitRate * 1000) / 10 + '%)';
+    if (opt.value === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+
+  // If current is 'all', ensure All seasons option is selected
+  if (current === 'all') sel.value = 'all';
+}
+
+// ── Season change handler ─────────────────────────────────────
+function ctxSeasonChange() {
+  var sel = document.getElementById('ctxSeasonSelect');
+  var newSeason = sel ? sel.value : 'all';
+  if (newSeason === ctxState.loadedSeason) return; // no-op if already loaded
+  ctxState.currentSeason = newSeason;
+  loadContextSeason(newSeason);
 }
 
 function buildFlagCheckboxes() {
   var wrap = document.getElementById('ctxFlagChecks');
   if (!wrap) return;
   wrap.innerHTML = Object.values(FLAG_META).map(function(meta) {
-    return '<label class="ctx-flag-check-label">' +
+    return '<label class="ctx-flag-check-label" title="' + meta.tooltip + '">' +
       '<input type="checkbox" value="' + meta.key + '" onchange="ctxFlagCheck(\'' + meta.key + '\', this.checked)">' +
       meta.abbr +
     '</label>';
@@ -1415,20 +1094,38 @@ function renderCtx() {
 
 // ── Selector strip ────────────────────────────────────────────
 function renderCtxSelector() {
-  var idx = ctxState.index;
+  var idx  = ctxState.index;
   var meta = '';
-  if (idx && idx.leagues && idx.leagues.length > 0) {
-    var entry = idx.leagues.find(function(l) {
-      return l.league === ctxState.currentLeague &&
-             l.season.replace('-', '_') === ctxState.currentSeason;
-    }) || idx.leagues[0];
-    if (entry) {
-      meta = entry.predictions + ' of ' + entry.fixtures + ' fixtures predicted · model ' +
-             entry.modelVersion + ' · features ' + entry.featureSetVersion;
+
+  if (idx && idx.leagues) {
+    var leagueEntries = idx.leagues
+      .filter(function(l) { return l.league === ctxState.currentLeague; })
+      .sort(function(a, b) { return a.season.localeCompare(b.season); }); // asc for range display
+
+    if (ctxState.currentSeason === 'all') {
+      var totalPreds   = ctxState.settled.length;
+      var seasonCount  = leagueEntries.length;
+      var earliest     = leagueEntries.length > 0 ? leagueEntries[0].season : '';
+      var latest       = leagueEntries.length > 0 ? leagueEntries[leagueEntries.length - 1].season : '';
+      var rangeStr     = seasonCount > 1 ? earliest + ' to ' + latest : earliest;
+      meta = totalPreds + ' predictions across ' + seasonCount + ' seasons (' + rangeStr + ') · model context_raw_v1.2 · features pre_match_v1';
+    } else {
+      var entry = idx.leagues.find(function(l) {
+        return l.league === ctxState.currentLeague &&
+               l.season.replace('-', '_') === ctxState.currentSeason;
+      });
+      if (entry) {
+        meta = entry.predictions + ' of ' + entry.fixtures + ' fixtures predicted · ' +
+               entry.season + ' · model ' + entry.modelVersion + ' · features ' + entry.featureSetVersion;
+      }
     }
   }
+
   var el = document.getElementById('ctxSelectorMeta');
   if (el) el.textContent = meta;
+
+  // Keep the season select in sync
+  populateSeasonSelector();
 }
 
 // ── Headline cards ────────────────────────────────────────────
@@ -1489,12 +1186,28 @@ function renderCtxCards() {
 
 // ── Filter bar update ─────────────────────────────────────────
 function renderCtxFilterBar() {
-  var f = ctxState.filters;
+  var f           = ctxState.filters;
+  var isAggregate = ctxState.currentSeason === 'all';
+  var isGwMode    = f.viewMode === 'gameweek' && isAggregate;
+
   document.querySelectorAll('.ctx-chip[data-ctxgroup]').forEach(function(chip) {
     chip.classList.toggle('active', f[chip.dataset.ctxgroup] === chip.dataset.ctxval);
   });
+
   var gwEl = document.getElementById('ctxGwDisplay');
   if (gwEl) gwEl.textContent = 'GW ' + f.gwMin + ' – ' + f.gwMax;
+
+  var gwNote = document.getElementById('ctxGwNote');
+  if (gwNote) gwNote.style.display = isAggregate ? 'inline' : 'none';
+
+  // View mode row: only visible in aggregate mode
+  var vmRow = document.getElementById('ctxViewModeRow');
+  if (vmRow) vmRow.style.display = isAggregate ? 'flex' : 'none';
+
+  // Season sort: only visible in gameweek mode
+  var ssWrap = document.getElementById('ctxSeasonSortWrap');
+  if (ssWrap) ssWrap.style.display = isGwMode ? 'inline-flex' : 'none';
+
   var countEl = document.getElementById('ctxFilterCount');
   if (countEl) countEl.textContent = 'Showing ' + ctxState.filtered.length + ' of ' + ctxState.settled.length + ' settled predictions';
 }
@@ -1504,9 +1217,18 @@ function ctxChipClick(chip) {
   var group = chip.dataset.ctxgroup;
   var val   = chip.dataset.ctxval;
   ctxState.filters[group] = val;
+
+  // viewMode/seasonSort only affect rendering — no re-filter needed
+  if (group === 'viewMode' || group === 'seasonSort') {
+    renderCtxFilterBar();
+    renderCtxTable();
+    return;
+  }
+
   applyCtxFilters();
   renderCtxCards();
   renderCtxFilterBar();
+  renderFlagTable();
   renderCtxTable();
 }
 
@@ -1534,18 +1256,39 @@ function ctxGwChange() {
   applyCtxFilters();
   renderCtxCards();
   renderCtxFilterBar();
+  renderFlagTable();
   renderGwChart();
   renderCtxTable();
 }
 
 // ── Flag performance table ────────────────────────────────────
 function renderFlagTable() {
-  var rows   = ctxState.settled; // always all settled — never filtered
-  var o25all = rows.filter(function(r) { return r.context_direction === 'o25'; });
+  // Apply direction/grade/result/gameweek filters — but NOT flag filters.
+  // This lets you see how flags behave within a slice (e.g. O2.5 + Grade A)
+  // without the circular logic of filtering by a flag and reading its own row.
+  var f = ctxState.filters;
+  var rows = ctxState.settled.filter(function(r) {
+    if (f.direction !== 'all' && r.context_direction !== f.direction) return false;
+    if (f.grade !== 'all' && r.context_grade !== f.grade) return false;
+    if (f.result === 'won'  && r.won !== true)  return false;
+    if (f.result === 'lost' && r.won !== false) return false;
+    if (r.gameweek != null && (r.gameweek < f.gwMin || r.gameweek > f.gwMax)) return false;
+    return true;
+  });
+
+  // Build description of active slice for the header note
+  var sliceParts = [];
+  if (f.direction !== 'all') sliceParts.push(f.direction === 'o25' ? 'O2.5' : 'U2.5');
+  if (f.grade !== 'all')     sliceParts.push('Grade ' + f.grade);
+  if (f.result !== 'all')    sliceParts.push(f.result.charAt(0).toUpperCase() + f.result.slice(1));
+  if (f.gwMin > 1 || f.gwMax < 999) sliceParts.push('GW ' + f.gwMin + '–' + f.gwMax);
+  var sliceNote = sliceParts.length > 0
+    ? rows.length + ' predictions matching current filters (flag filters excluded)'
+    : rows.length + ' settled predictions · season/league/direction/grade filters applied · flag filters excluded';
 
   var html = '<div class="ctx-panel-head">Flag Performance' +
     '<span style="color:#66758c;font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;margin-left:10px">' +
-    'Computed over all ' + ctxState.settled.length + ' settled predictions · not affected by above filters</span></div>' +
+    sliceNote + '</span></div>' +
     '<div style="overflow-x:auto"><table class="ctx-flag-table">' +
     '<thead><tr>' +
     '<th>Flag</th><th>Fired</th><th>Expected</th>' +
@@ -1749,16 +1492,35 @@ function renderEdgeChart() {
 }
 
 // ── Predictions table ─────────────────────────────────────────
+// ── Helper: open drawer by fixtureId (used in gameweek mode) ─
+function openCtxDrawerById(fixtureId) {
+  var row = ctxState.filtered.find(function(r) { return r.fixtureId === fixtureId; });
+  openCtxDrawer(row);
+}
+
+// ── Predictions table — branches on viewMode ──────────────────
 function renderCtxTable() {
-  var rows      = ctxState.filtered;
-  var pageSize  = ctxState.pageSize;
-  var page      = ctxState.page;
-  var total     = rows.length;
-  var totalPages = Math.ceil(total / pageSize);
-  var pageRows  = rows.slice(page * pageSize, (page + 1) * pageSize);
+  var isAggregate = ctxState.currentSeason === 'all';
+  var isGwMode    = ctxState.filters.viewMode === 'gameweek' && isAggregate;
 
   var countEl = document.getElementById('ctxFilterCount');
-  if (countEl) countEl.textContent = 'Showing ' + total + ' of ' + ctxState.settled.length + ' settled predictions';
+  if (countEl) countEl.textContent = 'Showing ' + ctxState.filtered.length + ' of ' + ctxState.settled.length + ' settled predictions';
+
+  if (isGwMode) {
+    renderCtxTableGameweek();
+  } else {
+    renderCtxTableStandard();
+  }
+}
+
+// ── Standard table (paginated) ────────────────────────────────
+function renderCtxTableStandard() {
+  var rows       = ctxState.filtered;
+  var pageSize   = ctxState.pageSize;
+  var page       = ctxState.page;
+  var total      = rows.length;
+  var totalPages = Math.ceil(total / pageSize);
+  var pageRows   = rows.slice(page * pageSize, (page + 1) * pageSize);
 
   if (!pageRows.length) {
     document.getElementById('ctxTableWrap').innerHTML =
@@ -1768,57 +1530,7 @@ function renderCtxTable() {
 
   var tbody = pageRows.map(function(r, i) {
     var globalIdx = page * pageSize + i;
-    var isO25 = r.context_direction === 'o25';
-
-    var dirBadge = isO25
-      ? '<span class="dir-badge dir-o25" style="font-size:10px;padding:3px 7px">O2.5</span>'
-      : '<span class="dir-badge dir-u25" style="font-size:10px;padding:3px 7px">U2.5</span>';
-
-    var gradeBadge = '<span class="badge ' + gradeClass(r.context_grade) + '" style="font-size:10px;padding:3px 7px">' + (r.context_grade || '—') + '</span>';
-
-    // Compact flag pills
-    var flagPills = '';
-    Object.values(FLAG_META).forEach(function(meta) {
-      var fired = meta.key === 'concede_driven_over'
-        ? (r.flags && (r.flags.concede_driven_over_home || r.flags.concede_driven_over_away))
-        : (r.flags && r.flags[meta.key]);
-      if (fired) {
-        flagPills += '<span title="' + meta.label + '" style="display:inline-block;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.05);border-radius:5px;padding:1px 5px;font-size:9px;color:#94a3b8;margin:1px">' + meta.abbr + '</span>';
-      }
-    });
-    if (!flagPills) flagPills = '<span style="color:#2d3f57;font-size:10px">—</span>';
-
-    var edgeStr = r.edge_pct != null
-      ? '<span style="color:' + edgeColor(r.edge_pct) + ';font-size:12px">' + (r.edge_pct > 0 ? '+' : '') + r.edge_pct.toFixed(1) + '%</span>'
-      : '<span style="color:#2d3f57">—</span>';
-
-    var clvStr = r.clv_pct != null
-      ? '<span style="color:' + clvColor(r.clv_pct) + ';font-size:12px">' + (r.clv_pct > 0 ? '+' : '') + r.clv_pct.toFixed(1) + '%</span>'
-      : '<span style="color:#2d3f57">—</span>';
-
-    var wonHtml = r.won === true  ? '<span style="color:#6ee7b7;font-weight:700">✓</span>'
-                : r.won === false ? '<span style="color:#f87171;font-weight:700">✗</span>'
-                : '<span style="color:#2d3f57">—</span>';
-
-    var result = r.fullTimeHome != null ? r.fullTimeHome + '–' + r.fullTimeAway : '—';
-    var odds   = r.marketOdds != null
-      ? '<span style="color:#c4b5fd;font-size:12px">' + r.marketOdds.toFixed(2) + '</span>'
-      : '<span style="color:#2d3f57">—</span>';
-
-    return '<tr style="cursor:pointer" onclick="openCtxDrawer(ctxState.filtered[' + globalIdx + '])">' +
-      '<td style="color:#66758c;font-size:11px">' + (r.gameweek || '—') + '</td>' +
-      '<td style="color:#66758c;font-size:11px;white-space:nowrap">' + (r.fixtureDate || '—') + '</td>' +
-      '<td style="font-size:12px;white-space:nowrap">' + r.homeTeam + ' <span style="color:#3d4f6a">vs</span> ' + r.awayTeam + '</td>' +
-      '<td>' + dirBadge + '</td>' +
-      '<td>' + gradeBadge + '</td>' +
-      '<td style="max-width:110px">' + flagPills + '</td>' +
-      '<td style="text-align:right;color:#66758c;font-size:12px">' + (r.context_fair_odds ? r.context_fair_odds.toFixed(2) : '—') + '</td>' +
-      '<td style="text-align:right">' + odds + '</td>' +
-      '<td style="text-align:right">' + edgeStr + '</td>' +
-      '<td style="text-align:right">' + clvStr + '</td>' +
-      '<td style="text-align:center;color:#67e8f9;font-size:12px;font-weight:600">' + result + '</td>' +
-      '<td style="text-align:center">' + wonHtml + '</td>' +
-    '</tr>';
+    return buildCtxRowHTML(r, 'onclick="openCtxDrawer(ctxState.filtered[' + globalIdx + '])"', false);
   }).join('');
 
   var pagination = totalPages > 1
@@ -1840,6 +1552,133 @@ function renderCtxTable() {
       '</tr></thead>' +
       '<tbody>' + tbody + '</tbody>' +
     '</table>' + pagination;
+}
+
+// ── Gameweek mode table (grouped, no pagination) ──────────────
+function renderCtxTableGameweek() {
+  var rows      = ctxState.filtered;
+  var isNewest  = ctxState.filters.seasonSort === 'newest';
+
+  if (!rows.length) {
+    document.getElementById('ctxTableWrap').innerHTML =
+      '<div style="text-align:center;padding:2rem;color:#66758c;font-size:13px">No predictions match these filters.</div>';
+    return;
+  }
+
+  // Group by gameweek
+  var groups = {};
+  rows.forEach(function(r) {
+    var gw = r.gameweek || 0;
+    if (!groups[gw]) groups[gw] = [];
+    groups[gw].push(r);
+  });
+
+  // Sort GW numbers ascending
+  var gwNums = Object.keys(groups).map(Number).sort(function(a, b) { return a - b; });
+
+  // Sort rows within each GW by season
+  gwNums.forEach(function(gw) {
+    groups[gw].sort(function(a, b) {
+      var sa = a.season || '';
+      var sb = b.season || '';
+      return isNewest ? sb.localeCompare(sa) : sa.localeCompare(sb);
+    });
+  });
+
+  var html = '<div style="color:#44576e;font-size:11px;padding:10px 16px 6px;font-style:italic">' +
+    'Showing matches grouped by gameweek across seasons. Season sort: ' +
+    (isNewest ? 'newest first' : 'oldest first') + '.' +
+  '</div>';
+
+  gwNums.forEach(function(gw) {
+    var gwRows = groups[gw];
+    var won    = gwRows.filter(function(r) { return r.won === true; }).length;
+    var hitStr = gwRows.length > 0 ? Math.round(won / gwRows.length * 100) + '%' : '—';
+
+    html +=
+      '<div style="padding:10px 16px 4px;border-top:1px solid rgba(255,255,255,.07);margin-top:2px;display:flex;align-items:center;gap:10px">' +
+        '<span style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.1em;min-width:32px">GW ' + gw + '</span>' +
+        '<span style="font-size:10px;color:#44576e">' + gwRows.length + ' match' + (gwRows.length !== 1 ? 'es' : '') + '</span>' +
+        '<span style="font-size:10px;color:#44576e">·</span>' +
+        '<span style="font-size:10px;color:' + (won / gwRows.length >= 0.57 ? '#6ee7b7' : '#66758c') + '">' + hitStr + ' hit rate</span>' +
+      '</div>' +
+      '<table class="ctx-table" style="width:100%;border-collapse:collapse;margin-bottom:6px">' +
+        '<thead><tr>' +
+          '<th>Season</th><th>Date</th><th>Match</th><th>Dir</th><th>Grade</th>' +
+          '<th>Flags</th>' +
+          '<th style="text-align:right">Fair</th><th style="text-align:right">Odds</th>' +
+          '<th style="text-align:right">Edge</th><th style="text-align:right">CLV</th>' +
+          '<th style="text-align:center">Score</th><th style="text-align:center">Won</th>' +
+        '</tr></thead>' +
+        '<tbody>' +
+        gwRows.map(function(r) {
+          return buildCtxRowHTML(r, 'onclick="openCtxDrawerById(\'' + r.fixtureId + '\')"', true);
+        }).join('') +
+        '</tbody>' +
+      '</table>';
+  });
+
+  document.getElementById('ctxTableWrap').innerHTML = html;
+}
+
+// ── Shared row builder ────────────────────────────────────────
+// gwMode=true: first column shows season label instead of GW number
+function buildCtxRowHTML(r, onclickAttr, gwMode) {
+  var isO25 = r.context_direction === 'o25';
+
+  var dirBadge = isO25
+    ? '<span class="dir-badge dir-o25" style="font-size:10px;padding:3px 7px">O2.5</span>'
+    : '<span class="dir-badge dir-u25" style="font-size:10px;padding:3px 7px">U2.5</span>';
+
+  var gradeBadge = '<span class="badge ' + gradeClass(r.context_grade) + '" style="font-size:10px;padding:3px 7px">' + (r.context_grade || '—') + '</span>';
+
+  var flagPills = '';
+  Object.values(FLAG_META).forEach(function(meta) {
+    var fired = meta.key === 'concede_driven_over'
+      ? (r.flags && (r.flags.concede_driven_over_home || r.flags.concede_driven_over_away))
+      : (r.flags && r.flags[meta.key]);
+    if (fired) {
+      flagPills += '<span title="' + meta.tooltip + '" style="display:inline-block;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.05);border-radius:5px;padding:1px 5px;font-size:9px;color:#94a3b8;margin:1px">' + meta.abbr + '</span>';
+    }
+  });
+  if (!flagPills) flagPills = '<span style="color:#2d3f57;font-size:10px">—</span>';
+
+  var edgeStr = r.edge_pct != null
+    ? '<span style="color:' + edgeColor(r.edge_pct) + ';font-size:12px">' + (r.edge_pct > 0 ? '+' : '') + r.edge_pct.toFixed(1) + '%</span>'
+    : '<span style="color:#2d3f57">—</span>';
+
+  var clvStr = r.clv_pct != null
+    ? '<span style="color:' + clvColor(r.clv_pct) + ';font-size:12px">' + (r.clv_pct > 0 ? '+' : '') + r.clv_pct.toFixed(1) + '%</span>'
+    : '<span style="color:#2d3f57">—</span>';
+
+  var wonHtml = r.won === true  ? '<span style="color:#6ee7b7;font-weight:700">✓</span>'
+              : r.won === false ? '<span style="color:#f87171;font-weight:700">✗</span>'
+              : '<span style="color:#2d3f57">—</span>';
+
+  var result = r.fullTimeHome != null ? r.fullTimeHome + '–' + r.fullTimeAway : '—';
+  var odds   = r.marketOdds != null
+    ? '<span style="color:#c4b5fd;font-size:12px">' + r.marketOdds.toFixed(2) + '</span>'
+    : '<span style="color:#2d3f57">—</span>';
+
+  // First column: GW number in standard mode, Season label in gameweek mode
+  var firstCol = gwMode
+    ? '<td style="color:#66758c;font-size:11px;white-space:nowrap">' + (r.season || '—') + '</td>'
+    : '<td style="color:#66758c;font-size:11px">' + (r.gameweek || '—') + '</td>';
+
+  return '<tr style="cursor:pointer" ' + onclickAttr + '>' +
+    firstCol +
+    '<td style="color:#66758c;font-size:11px;white-space:nowrap">' + (r.fixtureDate || '—') + '</td>' +
+    '<td style="font-size:12px;white-space:nowrap">' + r.homeTeam + ' <span style="color:#3d4f6a">vs</span> ' + r.awayTeam + '</td>' +
+    '<td>' + dirBadge + '</td>' +
+    '<td>' + gradeBadge + '</td>' +
+    '<td style="max-width:110px">' + flagPills + '</td>' +
+    '<td style="text-align:right;color:#66758c;font-size:12px">' + (r.context_fair_odds ? r.context_fair_odds.toFixed(2) : '—') + '</td>' +
+    '<td style="text-align:right">' + odds + '</td>' +
+    '<td style="text-align:right">' + edgeStr + '</td>' +
+    '<td style="text-align:right">' + clvStr + '</td>' +
+    '<td style="text-align:center;color:#67e8f9;font-size:12px;font-weight:600">' + result + '</td>' +
+    '<td style="text-align:center">' + wonHtml + '</td>' +
+  '</tr>';
 }
 
 function ctxPageNav(dir) {
@@ -2021,6 +1860,188 @@ function buildDrawerHTML(r) {
     '</table>' +
   '</div>';
 }
-</script>
-</body>
-</html>
+
+// ─── Context Performance section ──────────────────────────────────────────────
+
+function toggleCtxPerfSection() {
+  var body = document.getElementById('ctxPerfBody');
+  var chevron = document.getElementById('ctxPerfChevron');
+  if (!body) return;
+  var open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (chevron) chevron.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
+}
+
+function renderCtxPerfSection(statsData) {
+  if (!statsData || !statsData.methods || !statsData.methods.context_raw) return;
+  var ctx = statsData.methods.context_raw;
+  if (!ctx) return;
+
+  // ── Hero cards ──────────────────────────────────────────────
+  var summary = ctx.summary || {};
+  var clv = summary.meanCLV;
+  var ctxClvCol = clv == null ? '#66758c' : clv > 1 ? '#6ee7b7' : clv >= 0 ? '#bef264' : '#fbbf24';
+  var hitColor = summary.hitRate == null ? '#66758c' : summary.hitRate >= 57 ? '#6ee7b7' : summary.hitRate >= 52 ? '#fbbf24' : '#f87171';
+
+  var cards = [
+    { label: 'Context Settled', val: summary.settled != null ? summary.settled : '—', sub: (summary.pending || 0) + ' pending' },
+    { label: 'Hit Rate', val: summary.hitRate != null ? summary.hitRate + '%' : '—', sub: (summary.won || 0) + ' / ' + (summary.settled || 0), color: hitColor },
+    { label: 'Mean CLV', val: clv != null ? (clv >= 0 ? '+' : '') + clv + '%' : '—',
+      sub: 'primary metric', color: ctxClvCol,
+      tip: 'CLV = how much tip-time odds beat closing line. Positive = finding value before market moves.' },
+    { label: 'O2.5', val: (function() {
+        var o = ctx.markets && ctx.markets['over_2.5'];
+        return o && o.hitRate != null ? o.hitRate + '%' : '—';
+      })(), sub: (function() {
+        var o = ctx.markets && ctx.markets['over_2.5'];
+        return o ? (o.won || 0) + ' / ' + (o.settled || 0) : '—';
+      })() },
+  ];
+
+  // Render to the shared summary strip (perfSummaryCards) so the top
+  // of the page looks consistent with Current/Calibrated.
+  document.getElementById('perfSummaryCards').innerHTML = cards.map(function(c) {
+    return '<div class="perf-hero-cell">' +
+      '<div class="ph-label">' + c.label + (c.tip ? ' <span class="ctx-tip" title="' + c.tip + '" style="cursor:help;font-size:10px">ⓘ</span>' : '') + '</div>' +
+      '<div class="ph-val" style="' + (c.color ? 'color:' + c.color : '') + '">' + c.val + '</div>' +
+      '<div class="ph-sub">' + c.sub + '</div>' +
+    '</div>';
+  }).join('');
+
+  // ── Agreement breakdown ─────────────────────────────────────
+  var agr = ctx.byAgreement || {};
+  var agrTypes = [
+    { key: 'context_confirms',  label: 'Confirms',  desc: 'Same fixture + direction as Current or Calibrated', color: '#6ee7b7' },
+    { key: 'context_disagrees', label: 'Disagrees', desc: 'Same fixture, opposite direction to Current/Calibrated', color: '#fbbf24' },
+    { key: 'context_only',      label: 'Context only', desc: 'No Current/Calibrated for this fixture', color: '#818cf8' },
+  ];
+  document.getElementById('ctxPerfAgreement').innerHTML = agrTypes.map(function(t) {
+    var d = agr[t.key] || {};
+    var hr = d.hitRate != null ? d.hitRate + '%' : '—';
+    var clv = d.meanCLV != null ? (d.meanCLV >= 0 ? '+' : '') + d.meanCLV + '%' : '—';
+    var ctxClvCol = d.meanCLV == null ? '#66758c' : d.meanCLV > 1 ? '#6ee7b7' : d.meanCLV >= 0 ? '#bef264' : '#f87171';
+    return '<div style="display:flex;align-items:center;gap:16px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)">' +
+      '<div style="width:10px;height:10px;border-radius:50%;background:' + t.color + ';flex-shrink:0"></div>' +
+      '<div style="flex:1">' +
+        '<div style="font-size:13px;font-weight:600;color:#e2e8f0">' + t.label + '</div>' +
+        '<div style="font-size:11px;color:#66758c;margin-top:2px">' + t.desc + '</div>' +
+      '</div>' +
+      '<div style="text-align:right;min-width:80px">' +
+        '<div style="font-size:12px;color:#94a3b8">' + (d.settled || 0) + ' settled · ' + hr + '</div>' +
+        '<div style="font-size:11px;color:' + ctxClvCol + '">CLV ' + clv + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  // ── By league ───────────────────────────────────────────────
+  var byLeague = ctx.byLeague || {};
+  var LEAGUE_NAMES = { england: 'England (EPL)', germany: 'Germany (BL1)' };
+  document.getElementById('ctxPerfByLeague').innerHTML = Object.entries(byLeague).map(function(entry) {
+    var slug = entry[0], d = entry[1];
+    var hr = d.hitRate != null ? d.hitRate + '%' : '—';
+    var clv = d.meanCLV != null ? (d.meanCLV >= 0 ? '+' : '') + d.meanCLV + '%' : '—';
+    var ctxClvCol = d.meanCLV == null ? '#66758c' : d.meanCLV > 1 ? '#6ee7b7' : d.meanCLV >= 0 ? '#bef264' : '#f87171';
+    return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">' +
+      '<div style="font-size:13px;color:#e2e8f0">' + (LEAGUE_NAMES[slug] || slug) + '</div>' +
+      '<div style="text-align:right">' +
+        '<div style="font-size:12px;color:#94a3b8">' + (d.settled || 0) + ' · ' + hr + '</div>' +
+        '<div style="font-size:11px;color:' + ctxClvCol + '">CLV ' + clv + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('') || '<div style="color:#66758c;font-size:12px">No data yet</div>';
+
+  // ── By grade ────────────────────────────────────────────────
+  var byGrade = ctx.byGrade || {};
+  document.getElementById('ctxPerfByGrade').innerHTML = ['A+', 'A', 'B'].map(function(g) {
+    var d = byGrade[g] || {};
+    var hr = d.hitRate != null ? d.hitRate + '%' : '—';
+    var clv = d.meanCLV != null ? (d.meanCLV >= 0 ? '+' : '') + d.meanCLV + '%' : '—';
+    var ctxClvCol = d.meanCLV == null ? '#66758c' : d.meanCLV > 1 ? '#6ee7b7' : d.meanCLV >= 0 ? '#bef264' : '#f87171';
+    return '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">' +
+      '<div><span class="badge ' + gradeClass(g) + '" style="font-size:11px;padding:3px 9px">' + g + '</span></div>' +
+      '<div style="text-align:right">' +
+        '<div style="font-size:12px;color:#94a3b8">' + (d.settled || 0) + ' · ' + hr + '</div>' +
+        '<div style="font-size:11px;color:' + ctxClvCol + '">CLV ' + clv + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  // ── Market panels ───────────────────────────────────────────
+  var markets = ctx.markets || {};
+  function ctxMktPanel(label, m, isUnvalidated) {
+    var hitCls = m.hitRate >= 55 ? 'green' : m.hitRate >= 45 ? 'amber' : 'red';
+    var hitColor = m.hitRate >= 55 ? '#6ee7b7' : m.hitRate >= 45 ? '#fbbf24' : '#f87171';
+    return '<div class="pmc-head">' +
+        '<div class="pmc-title">' + label + ' <em>' + (m.total || 0) + ' predictions</em>' +
+          (isUnvalidated ? ' <span style="font-size:10px;color:#fbbf24;font-weight:600">UNVALIDATED</span>' : '') +
+        '</div>' +
+        '<div class="pmc-pending">' + (m.pending || 0) + ' pending</div>' +
+      '</div>' +
+      '<div class="pmc-body">' +
+        '<div class="pmc-stat">' +
+          '<div class="pmc-stat-lbl">Hit Rate</div>' +
+          '<div class="pmc-stat-val ' + (m.hitRate != null ? hitCls : '') + '">' + (m.hitRate != null ? m.hitRate + '%' : '—') + '</div>' +
+          '<div class="hit-bar"><div class="hit-fill" style="width:' + (m.hitRate || 0) + '%;background:' + hitColor + '"></div></div>' +
+          '<div class="pmc-stat-sub">' + (m.won || 0) + ' of ' + (m.settled || 0) + ' settled</div>' +
+        '</div>' +
+        '<div class="pmc-rows">' +
+          '<div class="pmc-row"><div class="pmc-row-lbl">Mean CLV</div><div class="pmc-row-val ' + (m.meanCLV > 0 ? 'g' : '') + '">' + (m.meanCLV != null ? (m.meanCLV > 0 ? '+' : '') + m.meanCLV + '%' : '—') + '</div></div>' +
+          '<div class="pmc-row"><div class="pmc-row-lbl">Mean edge</div><div class="pmc-row-val">' + (m.meanEdge != null ? (m.meanEdge > 0 ? '+' : '') + m.meanEdge + '%' : '—') + '</div></div>' +
+          '<div class="pmc-row"><div class="pmc-row-lbl">Brier score</div><div class="pmc-row-val ' + (m.brierScore != null ? (m.brierScore < 0.22 ? 'g' : m.brierScore < 0.26 ? '' : 'r') : '') + '">' + (m.brierScore != null ? m.brierScore : '—') + '</div></div>' +
+          '<div class="pmc-row"><div class="pmc-row-lbl">ROI</div><div class="pmc-row-val ' + ((m.roi || 0) >= 0 ? 'g' : 'r') + '">' + (m.roi != null ? (m.roi > 0 ? '+' : '') + m.roi + '%' : '—') + '</div></div>' +
+        '</div>' +
+      '</div>' +
+      (isUnvalidated ? '<div class="pmc-warn">⚠ U2.5 signal not validated — see Stage 8 report. Track CLV only at this stage.</div>' : '') +
+      ((m.settled || 0) < 20 ? '<div class="pmc-warn">⚠ Only ' + (m.settled || 0) + ' settled. Sample too small — CLV trend over hit rate.</div>' : '');
+  }
+
+  var mktGrid = document.getElementById('ctxPerfMarkets');
+  if (mktGrid) {
+    mktGrid.innerHTML =
+      '<div class="perf-mkt-card">' + ctxMktPanel('Over 2.5 Goals',  markets['over_2.5']  || {}, false) + '</div>' +
+      '<div class="perf-mkt-card">' + ctxMktPanel('Under 2.5 Goals', markets['under_2.5'] || {}, true)  + '</div>';
+  }
+
+  // ── Settled table ───────────────────────────────────────────
+  var rows = ctx.recentSettled || [];
+  var tbody = document.getElementById('ctxPerfTableBody');
+  if (!tbody) return;
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:2rem;color:#8b9ab0;font-size:13px">No settled context predictions yet.</td></tr>';
+    return;
+  }
+
+  var AGR_LABELS = { context_confirms: 'Confirms', context_disagrees: 'Disagrees', context_only: 'Only' };
+  var AGR_COLORS = { context_confirms: '#6ee7b7', context_disagrees: '#fbbf24', context_only: '#818cf8' };
+
+  tbody.innerHTML = rows.map(function(p) {
+    var grade = p.context_grade || '—';
+    var dir = p.direction || (p.market === 'under_2.5' ? 'u25' : 'o25');
+    var isU25 = dir === 'u25';
+    var edgeStr = p.edge != null ? '<span style="color:' + edgeColor(p.edge) + '">' + (p.edge > 0 ? '+' : '') + p.edge.toFixed(1) + '%</span>' : '—';
+    var clvStr  = p.clvPct != null ? '<span style="color:' + clvColor(p.clvPct) + '">' + (p.clvPct > 0 ? '+' : '') + p.clvPct.toFixed(1) + '%</span>' : '—';
+    var agrLabel = AGR_LABELS[p.selectionType] || '—';
+    var agrCol   = AGR_COLORS[p.selectionType] || '#66758c';
+    var resultBadge = p.status === 'settled_won'
+      ? '<span style="color:#6ee7b7;font-weight:700">✓ Won</span>'
+      : p.status === 'settled_lost'
+        ? '<span style="color:#f87171;font-weight:700">✗ Lost</span>'
+        : '—';
+
+    return '<tr>' +
+      '<td style="color:#66758c;font-size:11px">' + (p.predictionDate || '—') + '</td>' +
+      '<td>' + (p.homeTeam || '') + ' vs ' + (p.awayTeam || '') + '</td>' +
+      '<td><span class="badge ' + gradeClass(grade) + '" style="font-size:10px;padding:3px 7px">' + grade + '</span></td>' +
+      '<td><span class="dir-badge ' + (isU25 ? 'dir-u25' : 'dir-o25') + '" style="font-size:10px;padding:3px 7px">' + (isU25 ? 'U2.5' : 'O2.5') + '</span>' + (isU25 ? ' <span style="font-size:9px;color:#fbbf24" title="U2.5 unvalidated">⚠</span>' : '') + '</td>' +
+      '<td><span style="font-size:11px;color:' + agrCol + ';font-weight:600">' + agrLabel + '</span></td>' +
+      '<td style="text-align:right;font-weight:700">' + fmtProbPct(p.modelProbability) + '</td>' +
+      '<td style="text-align:right;color:#c4b5fd">' + fmtVal(p.marketOdds) + '</td>' +
+      '<td style="text-align:right">' + edgeStr + '</td>' +
+      '<td style="text-align:right;color:#66758c">' + fmtVal(p.closingOdds) + '</td>' +
+      '<td style="text-align:right">' + clvStr + '</td>' +
+      '<td style="text-align:center;color:#67e8f9;font-weight:700">' + (p.result || '—') + '</td>' +
+      '<td style="text-align:center">' + resultBadge + '</td>' +
+    '</tr>';
+  }).join('');
+}

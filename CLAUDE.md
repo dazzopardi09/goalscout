@@ -11,6 +11,29 @@
 
 ---
 
+## Git workflow — always in this order
+
+**NEVER commit before branching.** Committing first then creating a branch just moves the pointer — the original branch also contains the commit.
+
+**Always: branch first, then commit.**
+```bash
+# 1. Check where you are
+git status
+git branch --show-current
+
+# 2. Create branch BEFORE committing
+git checkout -b feature/your-branch-name
+
+# 3. Stage and commit
+git add -A
+git commit -m "feat: description"
+
+# 4. Push
+git push -u origin feature/your-branch-name
+```
+
+---
+
 ## Deploy sequence — always in this order
 
 ```bash
@@ -19,7 +42,10 @@ docker compose down
 docker rmi goalscout goalscout-goalscout 2>/dev/null || true
 docker builder prune -f
 docker compose up --build -d
+docker logs -f goalscout
 ```
+
+**Always include `docker logs -f goalscout` at the end of every deploy sequence given to the user.**
 
 **Never** run `docker build` separately. Compose builds its own image named `goalscout-goalscout`. A standalone image named `goalscout` is silently ignored by Compose and causes stale deploys.
 
@@ -27,41 +53,109 @@ docker compose up --build -d
 
 ---
 
-## Running scripts
+## Docker mount — critical
 
-The Docker image is **Node.js Alpine — no Python**. All scripts must use `node`, not `python3`.
+Only `data/` is mounted from the host into the container:
 
-**Preferred: run inside the already-running container** (env vars are already present):
-```bash
-docker cp /tmp/my-script.js goalscout:/app/my-script.js
-docker exec -it goalscout node /app/my-script.js
+```
+/mnt/user/appdata/goalscout/data  →  /app/data   (read/write, survives redeploy)
 ```
 
-**Alternative: temp container** (for scripts that need the source tree but no env):
+`/app/src`, `/app/public`, and everything else is **baked into the image at build time**. Changes to source files on the host only take effect after a full redeploy.
+
+**Consequences:**
+- Scripts that need to run inside the container must be placed in `data/` to be reachable at `/app/data/script.js`
+- Do NOT attempt `docker cp` to place scripts at `/app/fix.js` — the host has no mount there
+- Do NOT attempt to edit `/app/src/...` from inside a running container — changes are lost on next redeploy
+- Source fixes go to `/mnt/user/appdata/goalscout/src/...` on the host, then redeploy
+
+**Running a one-off script inside the container:**
 ```bash
-docker run --rm -v "$(pwd)":/app -w /app goalscout-goalscout node scripts/my-script.js
+# Write script to the mounted data directory
+cat > /mnt/user/appdata/goalscout/data/my-script.js << 'EOF'
+... script content ...
+EOF
+
+# Run it inside the container (where it appears at /app/data/my-script.js)
+docker exec goalscout node /app/data/my-script.js
 ```
 
-**Do not** use `docker exec` with env vars from `docker-compose.yml` — they won't be present in a temp container unless explicitly passed.
+---
+
+## How files and scripts are delivered — the actual workflow
+
+Daniel's Mac mounts the Unraid share at `/Volumes/appdata/goalscout`. Unraid sees the same share at `/mnt/user/appdata/goalscout`. Claude never has direct write access — all delivery uses one of two methods:
+
+**Method A — Download + Finder copy (patch scripts, new files)**
+Claude produces a file with `create_file` and presents it for download. Daniel downloads it to his Mac and moves it into the correct location via Finder or terminal:
+- Patch scripts → `/Volumes/appdata/goalscout/scripts/patches/my-patch.js`
+- Source files → `/Volumes/appdata/goalscout/src/...`
+- Public files → `/Volumes/appdata/goalscout/public/index.html`
+
+**Method B — VSCode paste (edits to existing files)**
+Claude outputs the full updated file content. Daniel opens the file in VSCode and pastes over it.
+
+**Running patch scripts on Unraid**
+Patch scripts live in `scripts/patches/` and run directly on the Unraid host — no Docker needed, they edit host source files:
+```bash
+node /mnt/user/appdata/goalscout/scripts/patches/patch_something.js
+```
+Unraid has Node.js. Unraid does **not** have Python. All scripts must be `.js`.
+
+**Running one-off scripts that need the container environment**
+Place in `data/` (the only mounted volume) and run via `docker exec`:
+```bash
+docker exec goalscout node /app/data/my-script.js
+```
+Do NOT use `docker cp` to paths outside `data/`. Do NOT edit `/app/src/...` from inside a running container — changes are lost on next build.
 
 ---
 
 ## Syntax checking modules
 
 ```bash
-docker exec -it goalscout node -e "require('./src/engine/module')"
+docker exec goalscout node -e "require('./src/engine/module')"
 ```
 
 `MODULE_NOT_FOUND` for `undici` or other built-in deps is safe to ignore. Real syntax errors surface first.
+
+**Important:** A clean `require()` check only confirms no syntax errors at module load time. It does NOT confirm runtime correctness — bugs that only trigger during execution (e.g. a variable referenced inside a `.map()` callback that isn't in scope) will not be caught. Always test with real data after deploying logic changes.
+
+---
+
+## File header convention — required on all source files
+
+Every source file Claude produces must open with a comment block containing:
+1. The file's path within the project
+2. A separator line (`// ─────...`)
+3. Plain-English description of what the file does
+4. Any critical notes about what it must NOT be confused with or misused for
+
+Example:
+```javascript
+// src/engine/context-predictions.js
+// ─────────────────────────────────────────────────────────────
+// Stage 10 — context_raw live paper-tracking.
+//
+// Logs context_raw predictions to predictions.jsonl alongside
+// (but explicitly separate from) current/calibrated predictions.
+//
+// Deduplication keyed on fixtureId + predictionDate + modelVersion.
+// Do NOT confuse with history.js which handles current/calibrated logging.
+// ─────────────────────────────────────────────────────────────
+```
+
+Applies to: all `.js` files in `src/`, all patch scripts in `scripts/patches/`, any utility scripts.
+Does NOT apply to `public/index.html`.
 
 ---
 
 ## Writing multi-line scripts for the host
 
-Avoid bash heredocs when the script contains backticks, template literals, single quotes, or special characters. Instead:
-- Create the file with `create_file` tool and present it to the user for download
-- Or write it via `python3 -c "open(...).write(...)"` on the host
-- Multi-line JS edits in existing files: use Python3 `content.replace(old, new)` — more reliable than `sed` or shell heredocs
+Avoid bash heredocs when the script contains backticks, template literals, single quotes, or special characters. Options:
+- Write the file using the `create_file` tool and present it for download, then the user copies it to the host
+- Use `sed -i` for single-line substitutions on the host (no heredoc needed)
+- Multi-line JS edits in existing files: `sed -i` with careful escaping, or deliver a full replacement file
 
 ---
 
@@ -129,6 +223,28 @@ Avoid bash heredocs when the script contains backticks, template literals, singl
 - England O2.5: always raw (global Platt rejected — see Stage 9)
 - All other leagues: always raw
 - Parameters live in `data/calibration/germany_o25_v1.json` (gitignored — data/ only)
+
+### context_raw record schema — required fields
+The following fields **must** be present in every context_raw prediction record written to `predictions.jsonl`. Missing any of these will silently break Performance tab aggregation or the selectionType pipeline:
+
+| Field | Value | Notes |
+|---|---|---|
+| `method` | `'context_raw'` | Required for all filtering |
+| `direction` | `'o25'` or `'u25'` | **Must be stored explicitly** — `context_direction` alone is not sufficient. `history.js`, `aggregateContextRaw()`, and the selectionType comparison key all read `direction`, not `context_direction` |
+| `context_direction` | `'o25'` or `'u25'` | Context-model alias — kept for compatibility |
+| `context_grade` | `'A+'`, `'A'`, or `'B'` | Used by `byGrade` aggregation — must be `context_grade`, NOT `grade` |
+| `selectionType` | `'context_confirms'`, `'context_disagrees'`, `'context_only'`, or `null` | Assigned in orchestrator before `logContextPredictions()` is called. Stored at log time — never recomputed. `null` is valid for backfilled records where shortlist state is unrecoverable |
+| `market` | `'over_2.5'` or `'under_2.5'` | Used by `mktStats()` market split |
+| `modelProbability` | number | Used by Brier score calculation — must not be null |
+| `leagueSlug` | `'england'` or `'germany'` | Used by `byLeague` aggregation |
+
+### selectionType assignment — dedup interaction hazard
+`selectionType` is assigned to `contextItems` in orchestrator before `logContextPredictions()` is called. However, `logContextPrediction()` uses a dedup check keyed on `fixtureId + predictionDate + modelVersion`. If a record was already logged in an earlier refresh the same day (before the selectionType patch was deployed), the logger will silently skip re-logging it and `selectionType` will remain absent from that record.
+
+**If selectionType is missing from existing records:** run a backfill script from `data/` — it cannot be recovered from the logger. See the April 2026 backfill incident.
+
+### selectionType key is direction-aware
+The comparison key for selectionType is `fixtureId + '__' + direction`, NOT `fixtureId` alone. A fixture where context says O2.5 but current says U2.5 is `context_disagrees`, not `context_confirms`. Always use the full key.
 
 ---
 
@@ -198,3 +314,8 @@ POST /api/pre-kickoff     → trigger pre-KO odds capture
 - **`calibration.js` vs `context-calibration.js`**: naming these the same breaks the current/calibrated model silently. The name collision was introduced in Stage 9 and required a hotfix. Never rename `calibration.js`.
 - `context_raw` "No odds" for a fixture is not always a bug — it can mean the Odds API had odds for the opposite direction to what context_raw predicted (market disagrees with the model's direction call).
 - `estimateKickoffUTC` pitfall: early-morning AEST times can map to the wrong UTC day. `ABANDON_AFTER_HOURS` set to 72 as safety net.
+- **`context-predictions.js` must store `direction` explicitly** — `context_direction` alone is not enough. `history.js` and the selectionType key both read `direction`. This was missing from the original implementation and required a backfill in April 2026.
+- **`require()` syntax check does not catch runtime bugs** — a variable out of scope inside a `.map()` callback passes the syntax check but throws at runtime. Always verify logic changes with real data, not just `node -e "require(...)"`.
+- **Docker mount is `data/` only** — `/app/src` is baked into the image. Scripts for one-off fixes must be placed in `data/` to be reachable inside the container at `/app/data/`. Do not attempt `docker cp` to paths outside the mount.
+- **Unraid has no `python3`** — all scripts must be Node.js. The Docker image is also Node.js Alpine with no Python.
+- **Always append `docker logs -f goalscout` to every deploy command sequence** so the user can see startup output immediately.

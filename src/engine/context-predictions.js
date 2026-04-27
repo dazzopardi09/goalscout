@@ -141,7 +141,7 @@ function buildProbabilityBlock(league, direction, grade, rawProb) {
  * @param {object} homeRolling - rolling stats for home team (from rolling-stats.js)
  * @param {object} awayRolling - rolling stats for away team (from rolling-stats.js)
  */
-function logContextPrediction(match, scored, homeRolling, awayRolling) {
+function logContextPrediction(match, scored, homeRolling, awayRolling, selectionType) {
   if (scored.skip) return;  // model passed on this fixture — nothing to log
 
   const today      = new Date().toISOString().slice(0, 10);
@@ -210,6 +210,7 @@ function logContextPrediction(match, scored, homeRolling, awayRolling) {
 
     // status:'pending' is required — settler filters predictions.filter(p => p.status === 'pending')
     status:               'pending',
+    selectionType:        selectionType || null,
 
     league:               match.league,
     leagueSlug:           league,
@@ -221,6 +222,7 @@ function logContextPrediction(match, scored, homeRolling, awayRolling) {
 
     // ── Context model prediction ─────────────────────────────
     context_direction:       direction,
+    direction:               direction,   // settlement-compatible alias (o25|u25)
     context_grade:           grade,
     context_o25_score:       scored.o25Score,
     context_u25_score:       scored.u25Score,
@@ -294,12 +296,13 @@ function logContextPredictions(items) {
   const SUPPORTED = new Set(['england', 'germany']);
   let logged = 0;
 
-  for (const { match, scored, homeRolling, awayRolling } of items) {
+  for (const item of items) {
+    const { match, scored, homeRolling, awayRolling } = item;
     const slug = match.leagueSlug || match.league;
     if (!SUPPORTED.has(slug)) continue;
     if (scored.skip) continue;
 
-    logContextPrediction(match, scored, homeRolling, awayRolling);
+    logContextPrediction(match, scored, homeRolling, awayRolling, item.selectionType || null);
     logged++;
   }
 

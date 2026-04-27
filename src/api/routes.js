@@ -93,6 +93,31 @@ router.post('/refresh', async (req, res) => {
 
   res.json({ message: 'Refresh started', status: 'running' });
 });
+// ── Manual settlement sweep ─────────────────────────────────
+
+router.post('/settle', async (req, res) => {
+  try {
+    const { fetchScoresAndSettle } = require('../engine/settler');
+    const result = await fetchScoresAndSettle();
+    res.json({ message: 'Settlement sweep complete', ...result });
+  } catch (err) {
+    console.error('[api] settlement error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Manual pre-kickoff odds capture ────────────────────────
+
+router.post('/pre-kickoff', async (req, res) => {
+  try {
+    const { fetchCurrentOddsForPending } = require('../engine/settler');
+    await fetchCurrentOddsForPending();
+    res.json({ message: 'Pre-kickoff odds capture complete' });
+  } catch (err) {
+    console.error('[api] pre-kickoff error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── Context Research: backtest index ──────────────────────────
 //
