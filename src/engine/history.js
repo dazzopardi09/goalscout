@@ -121,6 +121,45 @@ function logPrediction(match, analysis, method = 'current', selectionType = null
       flagScore:  match.score ?? null,
       grade:      match.grade ?? null,
     },
+
+    // features: richer input snapshot captured at decision time.
+    // Added Task 2. New records only — old records simply lack this field.
+    // Do NOT read leagueStats fields from features in scoring or probability
+    // code — use leagueStatsMap directly in the orchestrator instead.
+    features: {
+      source: 'soccerstats',
+
+      homeO25pct:    match.home?.o25pct    ?? null,
+      awayO25pct:    match.away?.o25pct    ?? null,
+      homeBtsPct:    match.home?.btsPct    ?? null,
+      awayBtsPct:    match.away?.btsPct    ?? null,
+      homeFtsPct:    match.home?.ftsPct    ?? null,
+      awayFtsPct:    match.away?.ftsPct    ?? null,
+      homeCsPct:     match.home?.csPct     ?? null,
+      awayCsPct:     match.away?.csPct     ?? null,
+      homeAvgTG:     match.home?.avgTG     ?? null,
+      awayAvgTG:     match.away?.avgTG     ?? null,
+      combinedAvgTG: (match.home?.avgTG != null && match.away?.avgTG != null)
+                       ? Math.round((match.home.avgTG + match.away.avgTG) * 100) / 100
+                       : null,
+      homePpg:       match.home?.ppg       ?? null,
+      awayPpg:       match.away?.ppg       ?? null,
+      homeGp:        match.home?.gp        ?? null,
+      awayGp:        match.away?.gp        ?? null,
+
+      leagueO25pct:         match.leagueStatsSnapshot?.o25pct    ?? null,
+      leagueAvgGoals:       match.leagueStatsSnapshot?.avgGoals  ?? null,
+      leagueBtsPct:         match.leagueStatsSnapshot?.btsPct    ?? null,
+      leagueStatsAvailable: match.leagueStatsSnapshot != null,
+      leagueStatsSource:    match.leagueStatsSnapshot?.source    ?? null,
+      leagueStatsIsProxy:   match.leagueStatsSnapshot?.isProxy   ?? null,
+
+      o25score:     match.o25score  ?? null,
+      u25score:     match.u25score  ?? null,
+      winningScore: match.score     ?? null,
+      grade:        match.grade     ?? null,
+      flags:        match.flags     ?? null,
+    },
   });
 }
 

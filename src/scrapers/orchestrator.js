@@ -278,7 +278,8 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
     // Analyse every scored match once, then derive both model paths.
     for (const m of scored) {
       try {
-        const currentAnalysis = analyseMatch(m, leagueStatsMap[m.leagueSlug] || {});
+        m.leagueStatsSnapshot = leagueStatsMap[m.leagueSlug] || null;
+        const currentAnalysis = analyseMatch(m, m.leagueStatsSnapshot || {});
         const rawO25 = currentAnalysis?.o25?.probability;
 
         const calibratedO25 = rawO25 != null

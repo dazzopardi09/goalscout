@@ -270,6 +270,49 @@ function logContextPrediction(match, scored, homeRolling, awayRolling, selection
       o25_count:            awayRolling.o25_count,
       games_available:      awayRolling.games_available,
     } : null,
+
+    // features: structured input snapshot captured at decision time.
+    // Added Task 2. New records only — old records simply lack this field.
+    // Existing top-level fields (homeRolling, awayRolling, context_* probability
+    // fields, context_grade, etc.) are preserved unchanged for compatibility.
+    features: {
+      source: 'football_data_org_rolling',
+
+      homeRolling: homeRolling ? {
+        teamName:            homeRolling.teamName,
+        gf_avg:              homeRolling.gf_avg,
+        ga_avg:              homeRolling.ga_avg,
+        fts_count:           homeRolling.fts_count,
+        scored2plus_count:   homeRolling.scored2plus_count,
+        conceded2plus_count: homeRolling.conceded2plus_count,
+        o25_count:           homeRolling.o25_count,
+        games_available:     homeRolling.games_available,
+      } : null,
+      awayRolling: awayRolling ? {
+        teamName:            awayRolling.teamName,
+        gf_avg:              awayRolling.gf_avg,
+        ga_avg:              awayRolling.ga_avg,
+        fts_count:           awayRolling.fts_count,
+        scored2plus_count:   awayRolling.scored2plus_count,
+        conceded2plus_count: awayRolling.conceded2plus_count,
+        o25_count:           awayRolling.o25_count,
+        games_available:     awayRolling.games_available,
+      } : null,
+
+      o25Score:     scored.o25Score     ?? null,
+      u25Score:     scored.u25Score     ?? null,
+      winningScore: scored.winningScore ?? null,
+      grade:        scored.grade        ?? null,
+      flags:        scored.flags        ?? null,
+      signals:      scored.signals      ?? null,
+
+      contextO25ProbRaw:        scored.context_o25_prob_raw              ?? null,
+      contextU25ProbRaw:        scored.context_u25_prob_raw              ?? null,
+      contextO25ProbCalibrated: probBlock.context_o25_prob_calibrated    ?? null,
+      contextProbUsed:          probBlock.context_prob_used              ?? null,
+      contextProbSource:        probBlock.context_prob_source            ?? null,
+      contextProbOverstated:    probBlock.context_prob_overstated        ?? null,
+    },
   };
 
   appendJSONL(config.PREDICTIONS_FILE, record);
