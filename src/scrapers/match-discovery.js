@@ -297,18 +297,84 @@ async function scrapeLeaguePage(slug) {
       }
     });
 
-    // Also try to extract league-level BTTS/O2.5 stats from
-    // summary tables on the page
+    // Extract league-level stats from the consolidated stats block.
+    //
+    // The page contains a <tr> whose first <td> starts with
+    // "<League> stats ... <N> matches played / <M> ... <X>% completed"
+    // and embeds all season-aggregate stats as "Label:\nValue" pairs.
+    //
+    // We scope extraction to that cell to avoid matching menu link text
+    // or per-team table columns that also appear on the page.
+    //
+    // Patterns use [\s\S]*? so newlines between label and value are
+    // bridged without needing the dotAll flag (Node <16 compat).
     let leagueStats = {};
-    const pageText = $.text();
 
-    const o25Match = pageText.match(/over\s*2\.5.*?(\d+(?:\.\d+)?)\s*%/i);
-    const bttsMatch = pageText.match(/(?:both\s*teams?\s*(?:to\s*)?scor|BTS|BTTS).*?(\d+(?:\.\d+)?)\s*%/i);
-    const avgGoals = pageText.match(/(?:average|avg).*?goals.*?(\d+\.\d+)/i);
+    let statsBlockText = null;
+    $('tr').each((_, tr) => {
+      const firstCell = $(tr).find('td').first().text();
+      // The stats block cell always contains "matches played /" and
+      // "completed" and "Over 2.5 goals".
+      // Confirmed stable across england + germany (2026-04-27).
+      if (/matches\s+played\s+\//.test(firstCell) &&
+          /completed/.test(firstCell) &&
+          /Over 2\.5 goals/.test(firstCell)) {
+        statsBlockText = firstCell;
+        return false; // break .each()
+      }
+    });
 
-    if (o25Match) leagueStats.o25pct = parseFloat(o25Match[1]);
-    if (bttsMatch) leagueStats.btsPct = parseFloat(bttsMatch[1]);
-    if (avgGoals) leagueStats.avgGoals = parseFloat(avgGoals[1]);
+    if (statsBlockText) {
+      const grab = (re) => {
+        const m = statsBlockText.match(re);
+        return m ? parseFloat(m[1]) : null;
+      };
+
+      // -- Active fields (consumed by probability.js and shortlist.js) --
+      const o25pct   = grab(/Over 2\.5 goals:[\s\S]*?([\d.]+)\s*%/i);
+      const btsPct   = grab(/Both teams scored:[\s\S]*?([\d.]+)\s*%/i);
+      const avgGoals = grab(/(?:^|[\r\n])\s*Goals per match:\s*([\d.]+)/i);
+
+      if (o25pct   != null) leagueStats.o25pct   = o25pct;
+      if (btsPct   != null) leagueStats.btsPct   = btsPct;
+      if (avgGoals != null) leagueStats.avgGoals = avgGoals;
+
+      // -- Passive fields -- for future analysis only, NOT used in scoring --
+      // These are captured at zero extra cost from the same block and will
+      // be available when feature logging (Task 2) lands.  Do not read
+      // leagueStats.passive inside probability.js or shortlist.js.
+      const passive = {};
+      const o15pct     = grab(/Over 1\.5 goals:[\s\S]*?([\d.]+)\s*%/i);
+      const o35pct     = grab(/Over 3\.5 goals:[\s\S]*?([\d.]+)\s*%/i);
+      const homeWinPct = grab(/Home wins:[\s\S]*?([\d.]+)\s*%/i);
+      const drawPct    = grab(/Draws:[\s\S]*?([\d.]+)\s*%/i);
+      const awayWinPct = grab(/Away wins:[\s\S]*?([\d.]+)\s*%/i);
+
+      if (o15pct     != null) passive.o15pct     = o15pct;
+      if (o35pct     != null) passive.o35pct     = o35pct;
+      if (homeWinPct != null) passive.homeWinPct = homeWinPct;
+      if (drawPct    != null) passive.drawPct    = drawPct;
+      if (awayWinPct != null) passive.awayWinPct = awayWinPct;
+
+      if (Object.keys(passive).length > 0) leagueStats.passive = passive;
+
+      // -- Provenance metadata --
+      if (Object.keys(leagueStats).length > 0) {
+        leagueStats.source    = 'soccerstats_league_page';
+        leagueStats.isProxy   = false;
+        leagueStats.scrapedAt = new Date().toISOString();
+      }
+
+      console.log(
+        '[league-page] ' + slug + ' stats ->' +
+        ' o25=' + (o25pct != null ? o25pct + '%' : 'missing') +
+        ' btts=' + (btsPct != null ? btsPct + '%' : 'missing') +
+        ' avgGoals=' + (avgGoals != null ? avgGoals : 'missing') +
+        ' passive fields=' + Object.keys(passive).length
+      );
+    } else {
+      console.warn('[league-page] ' + slug + ': stats block not found -- leagueStats will be empty');
+    }
 
     return { matches, leagueStats, slug, name: leagueName };
   } catch (err) {
