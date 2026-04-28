@@ -12,6 +12,7 @@ const KNOWN_ALIASES = {
   // ── England ───────────────────────────────────────────────
   'nottm forest':         'nottingham forest',
   'man utd':              'manchester united',
+  'manchester utd':       'manchester united',
   'man city':             'manchester city',
   'qpr':                  'queens park rangers',
   'spurs':                'tottenham hotspur',
@@ -122,4 +123,12 @@ function teamsMatch(apiHome, apiAway, predHome, predAway) {
   );
 }
 
-module.exports = { normalise, applyAlias, singleTeamMatch, teamsMatch };
+// Tokens that appear in multiple club names and carry no discriminating
+// power on their own. A rolling lookup match driven solely by these tokens
+// is not confident enough to use — see lookupRolling() in orchestrator.js.
+const ROLLING_NOISE_TOKENS = new Set([
+  'united', 'city', 'saint', 'sporting', 'athletic', 'atletico',
+  'real', 'sport', 'borussia', 'inter', 'western', 'wanderers',
+]);
+
+module.exports = { normalise, applyAlias, singleTeamMatch, teamsMatch, ROLLING_NOISE_TOKENS };

@@ -108,16 +108,55 @@ async function buildRollingMap(leagueSlug) {
  */
 function lookupRolling(ssTeamName, rollingMap) {
   if (!ssTeamName || !rollingMap || rollingMap.size === 0) return null;
- 
-  // Direct match (handles the few cases where names happen to be identical)
+
+  // Direct hit — map key exactly equals the SoccerSTATS name (rare).
   if (rollingMap.has(ssTeamName)) return rollingMap.get(ssTeamName);
- 
-  // Fuzzy match: normalises both names (strip "FC", diacritics, aliases),
-  // then checks token overlap. Threshold ≥ 0.4 overlap OR one is a substring.
+
+  const { normalise } = require('../utils/team-names');
+  const ssNorm   = normalise(ssTeamName);
+  const ssTokens = ssNorm.split(' ').filter(Boolean);
+
+  // Collect all candidates that pass singleTeamMatch, scored by overlap.
+  const candidates = [];
   for (const [fdName, rolling] of rollingMap) {
-    if (singleTeamMatch(fdName, ssTeamName)) return rolling;
+    if (!singleTeamMatch(fdName, ssTeamName)) continue;
+    const fdNorm   = normalise(fdName);
+    const fdTokens = fdNorm.split(' ').filter(Boolean);
+    const common   = ssTokens.filter(t => fdTokens.includes(t));
+    const overlap  = common.length / Math.max(ssTokens.length, fdTokens.length);
+    candidates.push({ fdName, rolling, common, overlap });
   }
- 
+
+  if (candidates.length === 0) return null;
+
+  // Sort best overlap first so the most specific match is tried first.
+  candidates.sort((a, b) => b.overlap - a.overlap);
+
+  // Iterate candidates. Return the first one that has at least one
+  // meaningful (non-noise, length >= 4) common token. Log and skip
+  // candidates whose only common tokens are generic suffixes like
+  // 'united' or 'city' that appear across many different clubs.
+  for (const cand of candidates) {
+    const meaningfulCommon = cand.common.filter(
+      t => !ROLLING_NOISE_TOKENS.has(t) && t.length >= 4
+    );
+    if (meaningfulCommon.length > 0) {
+      return cand.rolling;
+    }
+    console.warn(
+      `[context] rolling lookup candidate REJECTED for "${ssTeamName}": ` +
+      `"${cand.fdName}" ` +
+      `(overlap ${cand.overlap.toFixed(2)}, common tokens: [${cand.common.join(', ')}]) ` +
+      `— all common tokens are noise words. Trying next candidate.`
+    );
+  }
+
+  // All candidates rejected.
+  console.warn(
+    `[context] rolling lookup REJECTED for "${ssTeamName}": ` +
+    `all ${candidates.length} candidate(s) had noise-only common tokens. ` +
+    `Skipping this fixture.`
+  );
   return null;
 }
 
