@@ -44,7 +44,7 @@
 // and minimise Brier score independently for O2.5 and U2.5.
 // ─────────────────────────────────────────────────────────────
 
-const MODEL_VERSION = 'baseline-v1';
+const MODEL_VERSION = 'baseline-v1.1';
 
 /**
  * Estimate P(Over 2.5) for a match.
@@ -73,10 +73,12 @@ function estimateO25(match, leagueStats = {}) {
   }
 
   if (h.avgTG != null && a.avgTG != null) {
-    const combined = h.avgTG + a.avgTG;
-    // Maps combined TG to a probability signal:
-    // 5.0+ → ~0.73, 3.5 → ~0.50, 2.0 → ~0.25
-    const tgSignal = Math.min(0.95, Math.max(0.10, (combined - 1.5) / 5.0));
+    // meanTG: average total-goals profile across both teams.
+    // Using mean (not sum) because both avgTG values are estimates
+    // of the same fixture-level quantity — adding them double-counts.
+    // Anchors: meanTG 1.8 → 0.10 (floor), 2.5 → 0.50 (neutral), 3.0 → 0.79, 3.5 → 0.95 (cap)
+    const meanTG = (h.avgTG + a.avgTG) / 2;
+    const tgSignal = Math.min(0.95, Math.max(0.10, (meanTG - 1.625) / 1.75));
     inputs.push(tgSignal);
     weights.push(0.20);
   }

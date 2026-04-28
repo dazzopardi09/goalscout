@@ -478,7 +478,7 @@ function buildMatchRow(m, i) {
   var hFTS = fmtPct(m.home?.ftsPct), aFTS = fmtPct(m.away?.ftsPct);
   var hO = fmtPct(m.home?.o25pct), aO = fmtPct(m.away?.o25pct);
   var combinedTG = (m.home?.avgTG != null && m.away?.avgTG != null)
-    ? (m.home.avgTG + m.away.avgTG).toFixed(2) : null;
+    ? ((m.home.avgTG + m.away.avgTG) / 2).toFixed(2) : null;
 
   var leagueO25 = m.leagueO25pct != null ? m.leagueO25pct : null;
   var hOraw = m.home?.o25pct || 0;
@@ -536,8 +536,8 @@ function buildMatchRow(m, i) {
           <div class="inp-val">${leagueO25}%</div>
         </div>` : ''}
         ${tgRaw != null ? `<div class="inp-row">
-          <div class="inp-name">Avg TG <span class="inp-weight">×0.20</span></div>
-          <div class="inp-track"><div class="inp-fill" style="width:${Math.min(tgRaw/5*100,100)}%"></div></div>
+          <div class="inp-name">Mean TG profile <span class="inp-weight">×0.20</span></div>
+          <div class="inp-track"><div class="inp-fill" style="width:${Math.min(tgRaw/3.5*100,100)}%"></div></div>
           <div class="inp-val">${tgRaw}</div>
         </div>` : ''}
         <div class="blend-hero">
@@ -556,11 +556,11 @@ function buildMatchRow(m, i) {
           <div class="ctx-row"><div class="ctx-name">Away CS%</div><div class="ctx-val ${m.away?.csPct >= 40 ? 'hit' : 'plain'}">${aCS}</div></div>
           <div class="ctx-row"><div class="ctx-name">Home FTS%</div><div class="ctx-val ${m.home?.ftsPct >= 40 ? 'hit' : 'plain'}">${hFTS}</div></div>
           <div class="ctx-row"><div class="ctx-name">Away FTS%</div><div class="ctx-val ${m.away?.ftsPct >= 40 ? 'hit' : 'plain'}">${aFTS}</div></div>
-          ${combinedTG ? `<div class="ctx-row"><div class="ctx-name">Avg TG</div><div class="ctx-val plain">${combinedTG}</div></div>` : ''}
+          ${combinedTG ? `<div class="ctx-row"><div class="ctx-name">Mean TG profile</div><div class="ctx-val plain">${combinedTG}</div></div>` : ''}
         ` : `
           <div class="ctx-row"><div class="ctx-name">Home O2.5%</div><div class="ctx-val ${m.home?.o25pct >= 55 ? 'hit' : 'plain'}">${hO}</div></div>
           <div class="ctx-row"><div class="ctx-name">Away O2.5%</div><div class="ctx-val ${m.away?.o25pct >= 55 ? 'hit' : 'plain'}">${aO}</div></div>
-          ${combinedTG ? `<div class="ctx-row"><div class="ctx-name">Combined TG</div><div class="ctx-val ${parseFloat(combinedTG) >= 2.7 ? 'hit' : 'plain'}">${combinedTG}</div></div>` : ''}
+          ${combinedTG ? `<div class="ctx-row"><div class="ctx-name">Mean TG profile</div><div class="ctx-val ${parseFloat(combinedTG) >= 1.5 ? 'hit' : 'plain'}">${combinedTG}</div></div>` : ''}
         `}
       </div>
 

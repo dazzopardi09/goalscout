@@ -26,7 +26,7 @@
 <body>
 
 <h1>GoalScout — Task Checklist</h1>
-<div class="sub">Updated April 28 2026 · Branch: feature/context-raw-backtest</div>
+<div class="sub">Updated April 29 2026 · Branch: fix/performance-hero-metrics</div>
 
 <!-- ── COMPLETED ── -->
 <h2>Completed</h2>
@@ -127,6 +127,30 @@
   </label>
 </div>
 
+<div class="item done">
+  <input type="checkbox" checked id="t40"><label for="t40">
+    AvgTG probability correction — baseline-v1.1
+    <span class="tag tag-done">DONE</span>
+    <div class="note">probability.js: changed TG input from sum (h.avgTG + a.avgTG) to mean ((h+a)/2). Recalibrated formula: clamp((meanTG - 1.625) / 1.75, 0.10, 0.95). Bumped MODEL_VERSION to baseline-v1.1. app.js: display now shows mean TG profile. Verified: Neom SC vs Al Hazm drops from 62.61% to 58.85%. April 2026.</div>
+  </label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t41"><label for="t41">
+    shortlist.js scoring-threshold audit — extended what-if to discovered-matches.json
+    <span class="tag tag-done">DONE</span>
+    <div class="note">Confirmed O2.5 sumTG thresholds were calibrated to sumTG scale (equivalent to meanTG). Confirmed U2.5 sumTG positive thresholds never fired for European football. Stage 2A patch applied — see t43. April 2026.</div>
+  </label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t43"><label for="t43">
+    Stage 2A — shortlist.js meanTG rescaling
+    <span class="tag tag-done">DONE</span>
+    <div class="note">Replaced sumTG scoring with meanTG-equivalent thresholds in shortlist.js. O2.5: sumTG ≥6.0/5.0 → meanTG ≥3.0/2.5 (equivalent). U2.5 high-TG penalty: sumTG ≥5.0 → meanTG ≥2.5 (equivalent). Positive U2.5 TG support disabled and documented as Stage 2B deferred (see t42). Flag labels updated to "Mean TG profile". Verified behaviour-equivalent on 10-match discovered-matches snapshot: 0 direction/grade/pass-fail changes. April 2026.</div>
+  </label>
+</div>
+
 <!-- ── NOW / OUTSTANDING ── -->
 <h2>Now — Outstanding</h2>
 
@@ -146,12 +170,6 @@
   </label>
 </div>
 
-<div class="item">
-  <input type="checkbox" id="t23"><label for="t23">
-    Merge fix/settlement-validation into main (or fix/data-integrity-fix) after tonight's verification
-    <span class="tag tag-now">NOW</span>
-  </label>
-</div>
 
 <div class="item">
   <input type="checkbox" id="t24"><label for="t24">
@@ -180,6 +198,15 @@
 
 <!-- ── SOON ── -->
 <h2>Soon</h2>
+
+<div class="item">
+  <input type="checkbox" id="t42"><label for="t42">
+    Stage 2B — Validate positive U2.5 meanTG thresholds (Serie A, La Liga, Championship)
+    <span class="tag tag-soon">SOON</span>
+    <div class="warn">Do not enable until a broader discovered-matches sample is available. Proposed thresholds (meanTG &lt;= 1.9 strong, &lt;= 2.2 mild) are currently commented out in shortlist.js pending this backtest.</div>
+    <div class="note">Run shortlist_tg_whatifreport.js on a week with 50+ matches across defensive leagues (Serie A, La Liga, Championship, Liga Portugal). The key question: does meanTG &lt;= 2.2 fire in &lt;5% of the European match population? If yes, patch. If it fires in &gt;10%, tighten further to &lt;= 2.0 / &lt;= 1.7 and retest.</div>
+  </label>
+</div>
 
 <div class="item">
   <input type="checkbox" id="t25"><label for="t25">
@@ -224,6 +251,14 @@
     Consider exempting full-null rows (all stats null) from missing_key_stat severity='high' — reclassify as 'info' with reason 'no_stats_available' to reduce noise in suspicious-rows.jsonl from cup competitions
     <span class="tag tag-soon">SOON</span>
     <div class="note">Currently UCL/Copa rows fire 4× missing_key_stat per refresh at severity high. They never reach scoring (hasStats=false) so it is harmless but noisy.</div>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t44"><label for="t44">
+    BTTS historical backtest — does the current feature set have signal on BTTS outcomes?
+    <span class="tag tag-soon">SOON</span>
+    <div class="note">Use same Football-Data CSV infrastructure (results available; BTTS odds not in standard FD format). Key questions: what is the model's BTTS hit rate vs the base rate (~50%)? Does csPct/ftsPct have stronger discriminating power for BTTS than for O/U 2.5? Can calibration be measured from results alone (Brier vs naive base-rate prediction)? ROI calculation requires a separate BTTS odds source — do not claim ROI from FD CSVs alone.</div>
   </label>
 </div>
 

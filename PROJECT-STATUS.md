@@ -343,6 +343,71 @@ settled.forEach(p => console.log(p.method, p.homeTeam,'vs',p.awayTeam, p.result,
 
 ---
 
+## Recent Fixes (April 2026 — continued)
+
+### AvgTG probability correction — baseline-v1.1 (Stage 1, April 2026)
+
+**Problem:** `probability.js` used `h.avgTG + a.avgTG` (summed) as the TG
+signal input. SoccerSTATS `avgTG` is each team's average total goals per match —
+both values estimate the same fixture-level quantity, so summing them
+double-counted. For a typical Saudi Pro League match with both teams averaging
+~2.5–2.6 total goals, this produced a sumTG of ~5.14 and an inflated tgSignal
+of 0.73 that pushed marginal O2.5 picks over the 60% shortlist floor.
+
+**Fix (Option C):** Use mean TG: `(h.avgTG + a.avgTG) / 2`. Recalibrated
+formula with anchors: meanTG 1.8 → 0.10 (floor), 2.5 → 0.50 (neutral),
+3.0 → 0.79, 3.5+ → 0.95 (cap).
+Formula: `clamp((meanTG - 1.625) / 1.75, 0.10, 0.95)`
+
+**MODEL_VERSION bumped:** `baseline-v1` → `baseline-v1.1`
+
+**Compatibility note:** Predictions logged before this fix carry
+`modelVersion: 'baseline-v1'` and used the summed TG input. Their
+`modelProbability` values are not directly comparable to `baseline-v1.1`
+values for matches where the TG signal differed meaningfully. Settlement,
+odds, CLV, and `resultSource` fields are unaffected.
+
+**context_raw not affected:** The context_raw model uses its own separate
+rolling stats from Football-Data.org and does not read SoccerSTATS `avgTG`.
+
+**Verified impact (what-if report, 2026-04-28):**
+- Neom SC vs Al Hazm (saudiarabia): 62.61% → 58.85% (−3.76pp, drops below 60%)
+- Al Taawon vs Al Ittihad (saudiarabia): no change (meanTG = 3.40 → hits cap)
+
+**Stage 2 deferred:** `shortlist.js` scoring thresholds were written against
+the summed TG scale. The O2.5 thresholds (≥6.0, ≥5.0) will never fire on the
+mean scale. A broader what-if audit using `discovered-matches.json` is required
+before touching `shortlist.js`. See CHECKLIST.html.
+
+
+---
+
+## shortlist.js TG Rescaling (April 2026)
+
+### shortlist.js TG scoring — Stage 2A (meanTG rescaling, April 2026)
+
+**Problem:** `shortlist.js` used `combined = h.avgTG + a.avgTG` (sumTG scale) for
+TG-based scoring signals. The O2.5 thresholds (`>= 6.0` / `>= 5.0`) were calibrated
+to sumTG values that will never be reached on the meanTG scale, and the U2.5 positive
+thresholds (`<= 2.0` / `<= 2.5`) never fired in practice for European football
+(would require each team to average only ~1.25 total goals/match).
+
+**Stage 2A fix:**
+- O2.5 TG signal: `sumTG >= 6.0/5.0` → `meanTG >= 3.0/2.5` (algebraically equivalent)
+- U2.5 high-TG penalty: `sumTG >= 5.0 → u25 -= 1` → `meanTG >= 2.5 → u25 -= 1` (equivalent)
+- U2.5 positive support: commented out with Stage 2B note (was never firing anyway)
+- Flag label: "Combined TG" → "Mean TG profile"
+
+**Verified behaviour:** What-if report (2026-04-29) on 10 matches confirmed
+0 direction changes, 0 grade changes, 0 pass/fail changes on Stage 2A.
+
+**Stage 2B deferred:** Positive U2.5 meanTG thresholds (proposed: `<= 1.9` strong,
+`<= 2.2` mild) need validation against a broader sample including Serie A,
+La Liga, Championship, and other defensive leagues before enabling. See CHECKLIST t42.
+
+
+---
+
 ## Known Issues / Limitations
 
 | Issue | Status |

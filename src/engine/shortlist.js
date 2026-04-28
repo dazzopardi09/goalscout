@@ -19,7 +19,7 @@
 //
 // U2.5 scorer — defensive signals
 //   Positive: high csPct, high ftsPct, low o25pct, low avgTG, low-scoring league
-//   Penalty:  high o25pct, high combined TG (undermines U2.5)
+//   Penalty:  high o25pct, high mean TG profile (undermines U2.5)
 //
 // Shortlist gate: winning score >= MIN_WINNING_SCORE (default 4)
 // Grade (winning score only): A+ >= 9, A >= 6, B >= 4
@@ -65,11 +65,11 @@ function scoreMatch(match, leagueStats = {}) {
     else if (a.o25pct >= 55) { o25score += 1; o25flags.push(`Away O2.5 ${a.o25pct}%`); }
   }
 
-  // Positive: high combined avgTG
+  // Positive: high mean TG profile
   if (h.avgTG != null && a.avgTG != null) {
-    const combined = h.avgTG + a.avgTG;
-    if      (combined >= 6.0) { o25score += 2; o25flags.push(`🔥 Combined TG ${combined.toFixed(2)}`); }
-    else if (combined >= 5.0) { o25score += 1; o25flags.push(`Combined TG ${combined.toFixed(2)}`); }
+    const meanTG = (h.avgTG + a.avgTG) / 2;
+    if      (meanTG >= 3.0) { o25score += 2; o25flags.push(`🔥 Mean TG profile ${meanTG.toFixed(2)}`); }
+    else if (meanTG >= 2.5) { o25score += 1; o25flags.push(`Mean TG profile ${meanTG.toFixed(2)}`); }
   } else {
     if (h.avgTG != null && h.avgTG >= THRESHOLDS.TG_FLAG) { o25score += 1; o25flags.push(`Home TG ${h.avgTG}`); }
     if (a.avgTG != null && a.avgTG >= THRESHOLDS.TG_FLAG) { o25score += 1; o25flags.push(`Away TG ${a.avgTG}`); }
@@ -138,12 +138,11 @@ function scoreMatch(match, leagueStats = {}) {
     else if (a.o25pct <= 45) { u25score += 1; u25flags.push(`Away O2.5 ${a.o25pct}%`); }
   }
 
-  // Positive: low combined avgTG
-  if (h.avgTG != null && a.avgTG != null) {
-    const combined = h.avgTG + a.avgTG;
-    if      (combined <= 2.0) { u25score += 2; u25flags.push(`🔥 Combined TG only ${combined.toFixed(2)}`); }
-    else if (combined <= 2.5) { u25score += 1; u25flags.push(`Combined TG ${combined.toFixed(2)}`); }
-  }
+  // STAGE 2B deferred: positive U2.5 mean TG support intentionally disabled.
+  // Historical what-if testing did not justify enabling this yet.
+  // Candidate thresholds for future research only:
+  //   meanTG <= 1.9 -> +2 U2.5
+  //   meanTG <= 2.2 -> +1 U2.5
 
   // Positive: low-scoring league
   if (leagueStats.avgGoals != null && leagueStats.avgGoals <= 2.3) {
@@ -154,9 +153,12 @@ function scoreMatch(match, leagueStats = {}) {
   if (h.o25pct != null && h.o25pct >= 65) { u25score -= 2; u25flags.push(`⚠ Home O2.5 ${h.o25pct}%`); }
   if (a.o25pct != null && a.o25pct >= 65) { u25score -= 2; u25flags.push(`⚠ Away O2.5 ${a.o25pct}%`); }
 
-  // Penalty: high combined TG undermines U2.5
-  if (h.avgTG != null && a.avgTG != null && (h.avgTG + a.avgTG) >= 5.0) {
-    u25score -= 1; u25flags.push(`⚠ Combined TG ${(h.avgTG + a.avgTG).toFixed(2)}`);
+  // Penalty: high mean TG profile undermines U2.5
+  if (h.avgTG != null && a.avgTG != null) {
+    const meanTG = (h.avgTG + a.avgTG) / 2;
+    if (meanTG >= 2.5) {
+      u25score -= 1; u25flags.push(`⚠ Mean TG profile ${meanTG.toFixed(2)}`);
+    }
   }
 
   // ── Direction ─────────────────────────────────────────────
