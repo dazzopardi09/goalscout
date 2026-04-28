@@ -332,7 +332,7 @@ function logConflict(prediction, oddsApiResult, fdResult) {
 function aggregateContextRaw(preds) {
   if (!preds.length) {
     return {
-      summary: { total: 0, settled: 0, won: 0, pending: 0 },
+      summary: { total: 0, settled: 0, won: 0, pending: 0, hitRate: null, meanCLV: null, meanCLVPct: null },
       markets: {
         'over_2.5':  { total: 0, settled: 0, won: 0, hitRate: null, unvalidated: false },
         'under_2.5': { total: 0, settled: 0, won: 0, hitRate: null, unvalidated: true },
@@ -440,6 +440,7 @@ function aggregateContextRaw(preds) {
       total: preds.length, settled: settled.length, won: won.length, pending: pending.length,
       hitRate: settled.length > 0 ? Math.round((won.length / settled.length) * 1000) / 10 : null,
       meanCLV,
+      meanCLVPct: meanCLV, // canonical alias — hero reads this; meanCLV kept for context UI compat
     },
     markets: {
       'over_2.5':  mktStats(preds.filter(p => p.market === 'over_2.5'),  false),
@@ -449,6 +450,14 @@ function aggregateContextRaw(preds) {
     byGrade,
     byAgreement,
     recentSettled: settled
+      .sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''))
+      .slice(0, 50),
+    recentSettledO25: settled
+      .filter(p => p.market === 'over_2.5')
+      .sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''))
+      .slice(0, 50),
+    recentSettledU25: settled
+      .filter(p => p.market === 'under_2.5')
       .sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''))
       .slice(0, 50),
   };
@@ -603,6 +612,17 @@ function getPredictionStats() {
     const voided    = preds.filter(p => p.status === 'void');
     const conflicts = preds.filter(p => p.status === 'conflict');
 
+    // Model-level CLV and hit rate for the hero strip.
+    // null means no data yet — do not use 0 as a placeholder.
+    const clvPredsAll = preds.filter(p => p.clvPct != null);
+    const meanCLVPct = clvPredsAll.length > 0
+      ? Math.round((clvPredsAll.reduce((s, p) => s + p.clvPct, 0) / clvPredsAll.length) * 10) / 10
+      : null;
+    const allSettledPreds = preds.filter(p => p.status === 'settled_won' || p.status === 'settled_lost');
+    const hitRate = allSettledPreds.length > 0
+      ? Math.round((allSettledPreds.filter(p => p.status === 'settled_won').length / allSettledPreds.length) * 1000) / 10
+      : null;
+
     return {
       summary: {
         total:        preds.length,
@@ -613,12 +633,22 @@ function getPredictionStats() {
         void:         voided.length,
         conflicts:    conflicts.length,
         voidRatePct:  preds.length > 0 ? Math.round((voided.length / preds.length) * 1000) / 10 : 0,
+        hitRate,
+        meanCLVPct,
       },
       markets: {
         'over_2.5':  marketStats(overPreds),
         'under_2.5': marketStats(underPreds),
       },
       recentSettled: settled
+        .sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''))
+        .slice(0, 50),
+      recentSettledO25: settled
+        .filter(p => p.market === 'over_2.5')
+        .sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''))
+        .slice(0, 50),
+      recentSettledU25: settled
+        .filter(p => p.market === 'under_2.5')
         .sort((a, b) => (b.settledAt || '').localeCompare(a.settledAt || ''))
         .slice(0, 50),
       overlap: {

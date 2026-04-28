@@ -50,7 +50,7 @@
     <div class="stats-bar">
       <div>
         <div class="stats-bar__count" id="statShortlisted">—</div>
-        <div class="stats-bar__label">Shortlisted</div>
+        <div class="stats-bar__label" id="statShortlistedLabel">SHORTLISTED</div>
       </div>
       <div class="stats-bar__divider"></div>
       <div class="stats-bar__meta" id="statUpdated">—</div>
@@ -207,6 +207,10 @@
               <div class="settled-title">Recent Settled — Context</div>
               <div class="settled-sub">CLV is primary — positive = beat closing line. U2.5 shown with unvalidated marker.</div>
             </div>
+          </div>
+          <div class="market-tabs" style="margin-bottom:14px">
+            <button class="market-tab active" id="ctxPerfTabO25" onclick="switchCtxPerfMarketTab('over_2.5')">Over 2.5 Goals</button>
+            <button class="market-tab" id="ctxPerfTabU25" onclick="switchCtxPerfMarketTab('under_2.5')">Under 2.5 Goals</button>
           </div>
           <div class="perf-table-wrap">
             <table class="perf-table" id="ctxPerfTable">

@@ -17,8 +17,12 @@ let filters = { method: 'all', grade: 'all', direction: 'all', league: 'all' };
 let currentSort = { key: 'kickoff', dir: 'asc' };
 let perfData = null;
 let activePerfMarket = 'over_2.5';
+let activeCtxMkt = 'over_2.5'; // context settled market tab
 let statsData = null;
 let statsMethod = 'current';
+// Shortlist header state — owned by renderShortlist(), populated by loadStatus()
+var lastRawPickCount = null;
+var lastUpdatedText  = '—';
 
 // ── Helpers ───────────────────────────────────────────────────
 function pctClass(v) { return v == null ? 'pct-cold' : v >= 65 ? 'pct-hot' : v >= 50 ? 'pct-warm' : 'pct-cold'; }
@@ -206,15 +210,23 @@ async function loadStatus(returnData) {
     }
 
     if (d.meta) {
-      document.getElementById('statShortlisted').textContent = d.meta.shortlistCount || '—';
+      // Store raw backend pick count — renderShortlist() uses this for secondary text.
+      // Do NOT write statShortlisted here: renderShortlist() owns that element and
+      // knows the merged/filtered visible count. Writing here would overwrite the
+      // correct merged count on every status poll.
+      lastRawPickCount = d.meta.shortlistCount != null ? d.meta.shortlistCount : null;
       if (d.meta.lastRefresh) {
         var dt = new Date(d.meta.lastRefresh);
-        document.getElementById('statUpdated').textContent =
+        lastUpdatedText =
           'Updated ' +
           dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'Australia/Melbourne' }) +
           ' · ' +
           dt.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Melbourne' }) +
           ' AEST';
+        // Still write statUpdated immediately so it shows on first load before
+        // renderShortlist() has run. renderShortlist() will recompose it with
+        // the model-picks prefix when needed.
+        document.getElementById('statUpdated').textContent = lastUpdatedText;
       }
     }
     if (returnData) return d;
@@ -331,7 +343,32 @@ function renderShortlist() {
   var empty = document.getElementById('emptyState');
   var data = getSortedData();
 
-  document.getElementById('statShortlisted').textContent = data.length;
+  // Visible match count — merged rows after All-mode dedup and current filter.
+  var matchCount = data.length;
+
+  // Raw model pick count — only meaningful in All mode when the merge
+  // collapses multiple model picks into fewer visible rows.
+  // For single-model views, rawPickCount === matchCount so no secondary shown.
+  var rawPickCount = filters.method === 'all'
+    ? (shortlistData.current?.length     || 0) +
+      (shortlistData.calibrated?.length  || 0) +
+      (shortlistData.context_raw?.length || 0)
+    : matchCount;
+
+  document.getElementById('statShortlisted').textContent = matchCount;
+  document.getElementById('statShortlistedLabel').textContent =
+    matchCount === 1 ? 'MATCH SHORTLISTED' : 'MATCHES SHORTLISTED';
+
+  // Secondary text: prepend model-picks count only in All mode when it
+  // differs from visible count (i.e. merging collapsed some rows).
+  var updatedEl = document.getElementById('statUpdated');
+  if (filters.method === 'all' && rawPickCount !== matchCount && rawPickCount > 0) {
+    updatedEl.textContent =
+      rawPickCount + ' model pick' + (rawPickCount === 1 ? '' : 's') +
+      ' · ' + lastUpdatedText;
+  } else {
+    updatedEl.textContent = lastUpdatedText;
+  }
 
   if (!data.length) {
     wrap.innerHTML = '';
@@ -661,7 +698,10 @@ function switchPerfMarketTab(market) {
 
   if (statsData) {
     const methodData = statsData.methods?.[statsMethod] || { recentSettled: [] };
-    renderPerfTable(methodData.recentSettled || []);
+    const arr = market === 'over_2.5'
+      ? (methodData.recentSettledO25 || methodData.recentSettled || [])
+      : (methodData.recentSettledU25 || methodData.recentSettled || []);
+    renderPerfTable(arr);
   }
 }
 
@@ -689,39 +729,63 @@ function renderPerformance(d) {
   const methodData = d.methods?.[statsMethod] || current;
   const comparison = d.comparison?.overlap || { both: 0, current_only: 0, calibrated_only: 0 };
 
+  // Hero CLV helper — colour thresholds per ARCHITECTURE.md:
+  //   > +1.5% convincingly positive, 0–1.5% marginal, < 0% negative.
+  // null CLV (no closing odds yet) shows as "— CLV" — never use 0 as placeholder.
+  function heroCLV(s) {
+    const clv = s?.meanCLVPct ?? null;
+    const val = clv != null
+      ? (clv >= 0 ? '+' : '') + clv.toFixed(1) + '% CLV'
+      : '\u2014 CLV';
+    const col = clv == null  ? '#66758c'
+      : clv >  1.5           ? '#6ee7b7'
+      : clv >= 0             ? '#fbbf24'
+      :                        '#f87171';
+    const hitRate = s?.hitRate != null ? s.hitRate + '%' : '\u2014';
+    const settled = s?.settled || 0;
+    return { val, col, sub: hitRate + ' hit \u00b7 ' + settled + ' settled' };
+  }
+
+  const curHero = heroCLV(current.summary);
+  const calHero = heroCLV(calibrated.summary);
+
   const summaryCards = [
     {
-      label: 'Current',
-      val: current.summary?.settled > 0
-        ? `${Math.round((current.summary.won / current.summary.settled) * 1000) / 10}%`
-        : '—',
-      sub: `${current.summary?.settled || 0} settled`
+      label:   'CURRENT',
+      val:     curHero.val,
+      col:     curHero.col,
+      sub:     curHero.sub,
+      tooltip: 'Mean CLV \u2014 how much tip-time odds beat the closing line. Positive = finding value before the market moves.',
     },
     {
-      label: 'Calibrated',
-      val: calibrated.summary?.settled > 0
-        ? `${Math.round((calibrated.summary.won / calibrated.summary.settled) * 1000) / 10}%`
-        : '—',
-      sub: `${calibrated.summary?.settled || 0} settled`
+      label:   'CALIBRATED',
+      val:     calHero.val,
+      col:     calHero.col,
+      sub:     calHero.sub,
+      tooltip: 'Mean CLV \u2014 how much tip-time odds beat the closing line. Positive = finding value before the market moves.',
     },
     {
-      label: 'Overlap',
-      val: `${comparison.both || 0}`,
-      sub: `${comparison.current_only || 0} current-only · ${comparison.calibrated_only || 0} calibrated-only`
+      label:   'OVERLAP',
+      val:     String(comparison.both || 0),
+      col:     null,
+      sub:     (comparison.current_only || 0) + ' cur-only \u00b7 ' + (comparison.calibrated_only || 0) + ' cal-only',
+      tooltip: null,
     },
     {
-      label: 'Active View',
-      val: statsMethod === 'current' ? 'Current' : 'Calibrated',
-      sub: `${methodData.summary?.pending || 0} pending`
-    }
+      label:   'ACTIVE VIEW',
+      val:     statsMethod === 'current' ? 'Current' : 'Calibrated',
+      col:     null,
+      sub:     (methodData.summary?.pending || 0) + ' pending',
+      tooltip: null,
+    },
   ];
 
   document.getElementById('perfSummaryCards').innerHTML = summaryCards.map(c =>
-    `<div class="perf-hero-cell">
-      <div class="ph-label">${c.label}</div>
-      <div class="ph-val">${c.val}</div>
-      <div class="ph-sub">${c.sub}</div>
-    </div>`
+    '<div class="perf-hero-cell">' +
+      '<div class="ph-label">' + c.label + (c.tooltip ? ' <span class="ctx-tip" title="' + c.tooltip + '" style="cursor:help;font-size:10px;opacity:.7">\u24d8</span>' : '') + '</div>' +
+      '<div class="ph-val" style="' + (c.col ? 'color:' + c.col : '') + '">' + c.val + '</div>' +
+      '<div class="ph-sub">' + c.sub + '</div>' +
+    '</div>'
   ).join('');
 
   function mktPanel(label, m) {
@@ -765,7 +829,10 @@ function renderPerformance(d) {
   document.getElementById('perfU25Panel').innerHTML =
     mktPanel('Under 2.5 Goals', methodData.markets?.['under_2.5'] || {});
 
-  renderPerfTable(methodData.recentSettled || []);
+  const initArr = activePerfMarket === 'over_2.5'
+    ? (methodData.recentSettledO25 || methodData.recentSettled || [])
+    : (methodData.recentSettledU25 || methodData.recentSettled || []);
+  renderPerfTable(initArr);
 
   document.getElementById('perfLoading').style.display = 'none';
   var isCtxActive = statsMethod === 'context_raw';
@@ -1872,6 +1939,18 @@ function toggleCtxPerfSection() {
   if (chevron) chevron.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
 }
 
+function switchCtxPerfMarketTab(market) {
+  activeCtxMkt = market;
+  var o25Btn = document.getElementById('ctxPerfTabO25');
+  var u25Btn = document.getElementById('ctxPerfTabU25');
+  if (o25Btn) o25Btn.className = 'market-tab' + (market === 'over_2.5' ? ' active' : '');
+  if (u25Btn) u25Btn.className = 'market-tab' + (market === 'under_2.5' ? ' active-u25' : '');
+  if (statsData) {
+    var ctx = statsData.methods && statsData.methods['context_raw'];
+    if (ctx) renderCtxPerfSection(ctx);
+  }
+}
+
 function renderCtxPerfSection(statsData) {
   if (!statsData || !statsData.methods || !statsData.methods.context_raw) return;
   var ctx = statsData.methods.context_raw;
@@ -2002,13 +2081,16 @@ function renderCtxPerfSection(statsData) {
       '<div class="perf-mkt-card">' + ctxMktPanel('Under 2.5 Goals', markets['under_2.5'] || {}, true)  + '</div>';
   }
 
-  // ── Settled table ───────────────────────────────────────────
-  var rows = ctx.recentSettled || [];
+  // ── Settled table ─────────────────────────────────────────────
+  var allRows = activeCtxMkt === 'over_2.5'
+    ? (ctx.recentSettledO25 || (ctx.recentSettled || []).filter(function(p){ return p.market === 'over_2.5'; }))
+    : (ctx.recentSettledU25 || (ctx.recentSettled || []).filter(function(p){ return p.market === 'under_2.5'; }));
+  var rows = allRows;
   var tbody = document.getElementById('ctxPerfTableBody');
   if (!tbody) return;
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:2rem;color:#8b9ab0;font-size:13px">No settled context predictions yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:2rem;color:#8b9ab0;font-size:13px">No settled context ' + (activeCtxMkt === 'over_2.5' ? 'Over 2.5' : 'Under 2.5') + ' predictions yet.</td></tr>';
     return;
   }
 
