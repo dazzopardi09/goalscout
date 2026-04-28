@@ -213,7 +213,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
 
     // ── Step 2: Scrape SoccerSTATS today only ─────────────
     refreshState.progress = 'Scraping today\'s matches...';
-    const { matches: todayMatches, leagueSlugs: todaySlugs } = await scrapeMatchesPage(1);
+    const { matches: todayMatches, leagueSlugs: todaySlugs, suspiciousRows: suspiciousRowsFound } = await scrapeMatchesPage(1);
     console.log('[debug] leagues on SoccerSTATS today:', todaySlugs.length, todaySlugs);
 
     const deduped = new Map();
@@ -690,6 +690,7 @@ async function runFullRefresh({ scrapeDetails = true } = {}) {
       bettableLeagues:              bettableSlugs.length,
       leaguesOnPage:                todaySlugs.length,
       leagueStatsFound:             Object.keys(leagueStatsMap).length,
+      suspiciousRowsFound:          suspiciousRowsFound || 0,
     });
 
     refreshState.status         = 'done';

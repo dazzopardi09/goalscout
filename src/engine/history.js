@@ -120,6 +120,12 @@ function logPrediction(match, analysis, method = 'current', selectionType = null
       awayAvgTG:  match.away?.avgTG,
       flagScore:  match.score ?? null,
       grade:      match.grade ?? null,
+      // Propagated from scraper when suspicious row detection fires.
+      // Only present on flagged records — absent on clean records.
+      ...(match.suspicious ? {
+        suspicious:        true,
+        suspiciousReasons: match.suspiciousReasons || [],
+      } : {}),
     },
 
     // features: richer input snapshot captured at decision time.

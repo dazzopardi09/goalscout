@@ -22,6 +22,7 @@ module.exports = {
   PREDICTIONS_FILE:     path.join(DATA_DIR, 'history', 'predictions.jsonl'),
   RESULTS_FILE:         path.join(DATA_DIR, 'history', 'results.jsonl'),
   CONFLICTS_FILE:       path.join(DATA_DIR, 'history', 'settlement-conflicts.jsonl'),
+  SUSPICIOUS_ROWS_FILE: path.join(DATA_DIR, 'history', 'suspicious-rows.jsonl'),
 
   // ── SoccerSTATS ───────────────────────────────────────────
   SOCCERSTATS_COOKIE: process.env.SOCCERSTATS_COOKIE || '',
