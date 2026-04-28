@@ -26,7 +26,7 @@
 <body>
 
 <h1>GoalScout — Task Checklist</h1>
-<div class="sub">Updated April 25 2026 · Branch: fix/settlement-validation</div>
+<div class="sub">Updated April 28 2026 · Branch: feature/context-raw-backtest</div>
 
 <!-- ── COMPLETED ── -->
 <h2>Completed</h2>
@@ -111,6 +111,22 @@
   <input type="checkbox" checked id="t20"><label for="t20">captureClosingOdds() — separate 5-minute cron, targets 3–15 min before KO, writes closingOdds + closingOddsCapturedAt only, never overwrites <span class="tag tag-done">DONE</span></label>
 </div>
 
+<div class="item done">
+  <input type="checkbox" checked id="t34"><label for="t34">
+    context_raw rolling lookup noise token guard — ROLLING_NOISE_TOKENS prevents 'united'/'city' alone from matching wrong team (Man Utd → Leeds United bug fixed)
+    <span class="tag tag-done">DONE</span>
+    <div class="note">Files: team-names.js (ROLLING_NOISE_TOKENS, 'manchester utd' alias), orchestrator.js (lookupRolling rewrite). April 28 2026.</div>
+  </label>
+</div>
+
+<div class="item done">
+  <input type="checkbox" checked id="t35"><label for="t35">
+    Suspicious row detection + audit logging — rawCells snapshot saved to suspicious-rows.jsonl when data integrity checks fire; suspicious/suspiciousReasons propagated to predictions.jsonl; GET /api/suspicious-rows; suspiciousRowsFound in /api/status meta
+    <span class="tag tag-done">DONE</span>
+    <div class="note">Files: match-discovery.js, orchestrator.js, history.js, routes.js, config.js. April 28 2026.</div>
+  </label>
+</div>
+
 <!-- ── NOW / OUTSTANDING ── -->
 <h2>Now — Outstanding</h2>
 
@@ -145,6 +161,23 @@
   </label>
 </div>
 
+<div class="item">
+  <input type="checkbox" id="t36"><label for="t36">
+    Monitor suspicious-rows.jsonl over next 3–5 refresh cycles — confirm duplicated_core_profile never fires on a real league match
+    <span class="tag tag-now">NOW</span>
+    <div class="note">Cup rows (UCL, Copa) firing missing_key_stat every refresh is expected and harmless. The alert to investigate is duplicated_core_profile or critical severity on a league match.</div>
+    <div class="note">Check: curl -s http://localhost:3030/api/suspicious-rows | node -e "const r=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); r.filter(x=>x.severity!=='info'&&x.leagueSlug!=='cleague'&&!x.leagueSlug.includes('copa')).forEach(x=>console.log(x.severity,x.homeTeam,'v',x.awayTeam,x.reasons.join(', ')))"</div>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t37"><label for="t37">
+    Verify context_raw rolling lookup fix on next EPL refresh — confirm no [REJECTED] warnings for known teams, confirm Man Utd (if appearing) maps to Manchester United FC not Leeds United
+    <span class="tag tag-now">NOW</span>
+    <div class="note">Check: docker logs goalscout | grep "REJECTED"</div>
+  </label>
+</div>
+
 <!-- ── SOON ── -->
 <h2>Soon</h2>
 
@@ -175,6 +208,22 @@
     Calibration: begin tracking whether calibration.json is populated and which leagues have enough data
     <span class="tag tag-soon">SOON</span>
     <div class="note">Needs 200+ settled predictions per league — currently accumulating</div>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t38"><label for="t38">
+    Cagliari/Atalanta root cause — if a future duplicated_core_profile row fires on a real league match, inspect rawCells[1] vs rawCells[21] to determine whether source error or column offset error
+    <span class="tag tag-soon">SOON</span>
+    <div class="note">Current investigation stalled at "no raw HTML from 00:06 UTC scrape". Suspicious row guard now in place — next occurrence will be determinable.</div>
+  </label>
+</div>
+
+<div class="item">
+  <input type="checkbox" id="t39"><label for="t39">
+    Consider exempting full-null rows (all stats null) from missing_key_stat severity='high' — reclassify as 'info' with reason 'no_stats_available' to reduce noise in suspicious-rows.jsonl from cup competitions
+    <span class="tag tag-soon">SOON</span>
+    <div class="note">Currently UCL/Copa rows fire 4× missing_key_stat per refresh at severity high. They never reach scoring (hasStats=false) so it is harmless but noisy.</div>
   </label>
 </div>
 

@@ -22,7 +22,7 @@ A private local Unraid Docker app (port 3030) that scrapes football matches, ove
 SoccerSTATS today matches
   ↓ (FlareSolverr bypass)
 match-discovery.js — parse teams, stats, kickoff
-  ↓
+  ↓ suspicious row detection (post-parse, pre-scoring — flags/saves anomalies, does not skip)
 orchestrator.js — score all matches, build three-model shortlist
   ↓
 the-odds-api.js — fetch odds for all scored matches with direction
@@ -63,6 +63,12 @@ Performance tab — per method, per market stats
 - Included in `shortlist.json` as own `context_raw` array — does NOT affect current/calibrated
 - Displayed in Shortlist tab under Model filter: **Context** chip
 - Paper tracking only — not for real-money decisions until Stage 12
+
+### context_raw rolling lookup — noise token guard (added April 28 2026)
+- `lookupRolling()` in `orchestrator.js` was previously accepting fuzzy matches where the only common token was a generic suffix like `'united'`, `'city'`, `'sporting'`
+- This caused a confirmed bad prediction: Man Utd vs Brentford (April 27 2026) used **Leeds United FC** rolling stats for the Man Utd home slot — token `'united'` alone passed the 0.40 threshold and Leeds appeared first in the map
+- Fix: `ROLLING_NOISE_TOKENS` set exported from `team-names.js`; `lookupRolling()` now collects all candidates, sorts by overlap, rejects if best candidate's only common tokens are all noise words; logs a warning on rejection; returns null (fixture skipped, not scored with wrong data)
+- `'manchester utd'` alias also added to `team-names.js` (SoccerSTATS sends full form, not `'man utd'`)
 
 ### All-mode display merge (frontend only, no backend effect)
 - current + calibrated + context_raw agree (same fixture + direction) → one row, `Cur Cal Ctx` badges
@@ -147,15 +153,49 @@ Records settled before April 25 2026 may have `closingOdds` = `preKickoffOdds` (
 
 ---
 
+## Suspicious Row Detection (src/scrapers/match-discovery.js)
+
+Added April 28 2026. Runs after each match row is parsed from SoccerSTATS, before scoring. Does not skip rows or change scoring — flags and saves only.
+
+### Trigger codes
+| Code | Condition | Severity |
+|---|---|---|
+| `home_away_o25pct_identical` | home.o25pct === away.o25pct (both non-null) | `info` |
+| `home_away_avgtg_identical` | home.avgTG === away.avgTG (both non-null) | `medium` |
+| `duplicated_core_profile` | Both o25pct AND avgTG identical simultaneously | `high` |
+| `full_profile_identical` | All non-null numeric fields identical | `critical` |
+| `missing_key_stat:<field>` | o25pct or avgTG null after parsing | `high` |
+| `unexpected_timeidx:<value>` | timeIdx !== 11 | `critical` |
+
+### What gets written
+- `data/history/suspicious-rows.jsonl` — full rawCells[0..22] snapshot + parsedHome/Away + fingerprint
+- `match.suspicious` / `match.suspiciousReasons` propagated to prediction record `inputs` block if match reaches `logPrediction()`
+- `meta.suspiciousRowsFound` exposed in `/api/status`
+- `GET /api/suspicious-rows` returns last 50 snapshots
+
+### Known expected triggers
+Cup competition rows (UCL, Copa Libertadores, Copa Sudamericana) fire `missing_key_stat` every refresh — SoccerSTATS carries no season-aggregate stats for those competitions. These rows have `hasStats=false` and never reach scoring. Expected, not a bug.
+
+### Cagliari vs Atalanta (April 27 2026) — root cause unresolved
+- Logged inputs: `homeO25pct=31`, `awayO25pct=31`, `homeAvgTG=2.19`, `awayAvgTG=2.19` — both pairs identical
+- Model was internally consistent from these inputs (U2.5 direction, 63.09% probability reproduced exactly)
+- Decision-time raw HTML from 00:06 UTC scrape not cached — cannot determine whether source error or parser error
+- `duplicated_core_profile` would have fired if the guard had been live — raw cells would have been saved, root cause determinable
+- Result: 3-2 (over 2.5). CLV: +4.62% (market partially agreed pre-KO). Settled lost.
+- **The suspicious row guard is now in place to catch future occurrences.**
+
+---
+
 ## API Endpoints (src/api/routes.js)
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/status` | Refresh state, meta, `lastRefresh`, `lastSettlementChange` |
+| GET | `/api/status` | Refresh state, meta, `lastRefresh`, `lastSettlementChange`, `suspiciousRowsFound` |
 | GET | `/api/shortlist` | `{ current, calibrated, context_raw, comparison }` |
 | GET | `/api/stats` | Performance stats (per method, per market) |
 | GET | `/api/predictions` | Raw prediction history (last 100) |
 | GET | `/api/conflicts` | Settlement conflicts log |
+| GET | `/api/suspicious-rows` | Last 50 suspicious row snapshots ([] if none) |
 | GET | `/api/match/:id` | Match detail (if scraped) |
 | GET | `/api/context/index` | Backtest index (`_index.json`) — season metadata |
 | GET | `/api/context/backtest?league=&season=` | Backtest JSONL as JSON array (path-traversal safe) |
@@ -163,7 +203,7 @@ Records settled before April 25 2026 may have `closingOdds` = `preKickoffOdds` (
 | POST | `/api/settle` | Trigger manual settlement sweep |
 | POST | `/api/pre-kickoff` | Trigger manual pre-KO odds capture |
 
-### /api/shortlist shape (updated)
+### /api/shortlist shape
 ```json
 {
   "current":     [...],
@@ -197,6 +237,7 @@ No websockets, no SSE, no full page reload.
 | `data/history/predictions.jsonl` | Append-only prediction log. Deduped by `fixtureId+method+direction` (current/calibrated) or `fixtureId+predictionDate+modelVersion` (context_raw). |
 | `data/history/results.jsonl` | One entry per settled fixture. Deduped by `fixtureId`. |
 | `data/history/settlement-conflicts.jsonl` | Append-only. Written when Odds API and Football-Data disagree on a score. |
+| `data/history/suspicious-rows.jsonl` | Append-only. Written by `match-discovery.js` when a row triggers data integrity checks. Contains full `rawCells` snapshot. |
 | `data/calibration/league-calibration.json` | Platt scaling parameters for current/calibrated model. Needs ~200+ settled predictions. |
 | `data/calibration/germany_o25_v1.json` | Context_raw Platt params for Germany O2.5 A/A+. Gitignored — lives in data/ only. |
 | `data/rolling-results/{league}.json` | 8-week rolling results cache from Football-Data.org. Used by context_raw pipeline. |
@@ -209,8 +250,8 @@ No websockets, no SSE, no full page reload.
 
 | File | Purpose |
 |---|---|
-| `src/scrapers/orchestrator.js` | Main refresh — three-model pipeline, context_raw in Step 7.5 |
-| `src/scrapers/match-discovery.js` | SoccerSTATS parser — away stats offsets fixed |
+| `src/scrapers/orchestrator.js` | Main refresh — three-model pipeline, context_raw in Step 7.5, `lookupRolling()` with noise token guard |
+| `src/scrapers/match-discovery.js` | SoccerSTATS parser — away stats offsets fixed; suspicious row detection added |
 | `src/engine/shortlist.js` | Directional scoring (O2.5 vs U2.5) for current/calibrated |
 | `src/engine/probability.js` | P(O2.5), margin removal, edge |
 | `src/engine/calibration.js` | `applyCalibration()` via league-calibration.json (current/calibrated) |
@@ -218,11 +259,11 @@ No websockets, no SSE, no full page reload.
 | `src/engine/context-predictions.js` | `logContextPredictions()` — context_raw prediction logger |
 | `src/engine/context-calibration.js` | `getCalibratedProb()` — Platt loader for context_raw (Germany O2.5) |
 | `src/engine/rolling-stats.js` | `computeRollingStats()` — per-team last-6-match stat aggregation |
-| `src/engine/history.js` | Prediction logging, dedupe, reconcile(), perf stats |
+| `src/engine/history.js` | Prediction logging, dedupe, reconcile(), perf stats; propagates `suspicious`/`suspiciousReasons` to inputs block |
 | `src/engine/settler.js` | Score fetching, settlement, pre-KO odds, close capture |
 | `src/results/football-data.js` | Football-Data.org fetcher + league map + cache |
 | `src/odds/the-odds-api.js` | SLUG_TO_ODDS_MAP, sports list, odds fetch, disk cache |
-| `src/utils/team-names.js` | Shared normaliser + alias map |
+| `src/utils/team-names.js` | Shared normaliser + alias map + `ROLLING_NOISE_TOKENS` |
 | `public/index.html` | v3 UI — All/Current/Calibrated/Context tabs, smart All-mode merge, Research tab |
 
 ---
@@ -235,18 +276,19 @@ docker compose down
 docker rmi goalscout goalscout-goalscout 2>/dev/null || true
 docker builder prune -f
 docker compose up --build -d
+docker logs -f goalscout
 ```
 
 **Never** run `docker build` separately. Compose builds its own image named `goalscout-goalscout`. A standalone `goalscout` image is silently ignored.
 
 **Verify:** `docker images | grep goalscout` — should show exactly one image.
 
-**Run scripts inside the running container** (not on the host — host has no Node):
+**Patch scripts** are Python (`.py`) run via throwaway container — Unraid has no native Python:
 ```bash
-docker exec -it goalscout node /app/scripts/my-script.js
-# OR for one-off scripts:
-docker cp /tmp/script.js goalscout:/app/script.js
-docker exec -it goalscout node /app/script.js
+docker run --rm \
+  -v /mnt/user/appdata/goalscout:/mnt/user/appdata/goalscout \
+  python:3.11-slim \
+  python /mnt/user/appdata/goalscout/scripts/patches/patch_something.py
 ```
 
 ---
@@ -260,26 +302,43 @@ const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
 console.log('current:', d.current.length, 'calibrated:', d.calibrated.length, 'context_raw:', (d.context_raw||[]).length);
 "
 
+# Suspicious rows found in last refresh
+curl -s http://localhost:3030/api/status | node -e "
+const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+console.log('suspiciousRowsFound:', d.meta?.suspiciousRowsFound);
+"
+
+# Inspect recent suspicious rows (raw cells)
+curl -s http://localhost:3030/api/suspicious-rows | node -e "
+const rows = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+rows.filter(r => r.severity !== 'info').forEach(r =>
+  console.log(r.severity, r.homeTeam, 'v', r.awayTeam, r.reasons.join(', '))
+);
+"
+
 # Context_raw pipeline working
 docker logs goalscout | grep -E "context rolling|context_raw:"
+
+# context_raw rolling lookup — confirm no noise-token rejections on next refresh
+docker logs goalscout | grep "REJECTED"
 
 # Settlement working
 docker logs goalscout | grep settler
 
 # Confirm lastSettlementChange is populated after matches settle
-curl -s http://localhost:3030/api/status | jq '.lastSettlementChange'
+curl -s http://localhost:3030/api/status | node -e "
+const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+console.log('lastSettlementChange:', d.lastSettlementChange);
+"
 
 # Inspect recent settled predictions
-docker exec -it goalscout node -e "
+docker exec goalscout node -e "
 const { readJSONL } = require('./src/engine/history');
 const config = require('./src/config');
 const preds = readJSONL(config.PREDICTIONS_FILE);
 const settled = preds.filter(p => p.status === 'settled_won' || p.status === 'settled_lost').slice(-3);
 settled.forEach(p => console.log(p.method, p.homeTeam,'vs',p.awayTeam, p.result, 'src:',p.resultSource));
 "
-
-# Check for conflicts
-curl -s http://localhost:3030/api/conflicts | jq '.count'
 ```
 
 ---
@@ -291,22 +350,39 @@ curl -s http://localhost:3030/api/conflicts | jq '.count'
 | 8 predictions from April 19-21 outside Odds API window, unsupported by FD | Orphaned — settle manually or accept data loss |
 | Legacy records have `closingOdds` = `preKickoffOdds` (not true CLV) | Known, not backfilled. New records clean. |
 | `resultSource: undefined` on records settled before validation layer | Known, not migrated. Default was Odds API. |
-| `leagueStatsFound: 0` in meta — league O2.5% weight effectively zero | Investigate separately |
+| `leagueStatsFound: 0` in meta — league O2.5% weight effectively zero | Investigate — likely scraper parsing issue on league stats block |
 | Calibration data file sparse — needs 200+ settled predictions per league | Accept for now — accumulating |
 | `preKickoffOdds` captured up to 2h before KO — misses lineup-driven moves | By design for now; `closingOdds` at 3-15min is the fix |
-| Stuttgart vs Werder Bremen showed "No odds" in Context tab | Expected — Odds API had U2.5 odds but context_raw called O2.5; market disagreement, not a bug |
+| Cagliari vs Atalanta (April 27): `duplicated_core_profile` root cause unresolved — no raw HTML from scrape | Suspicious row guard now live; future occurrences will have rawCells saved |
+| Cup competition rows (UCL, Copa etc.) fire `missing_key_stat` on every refresh | Expected — no stats on SoccerSTATS for these competitions; rows never reach scoring |
 
 ---
 
-## Performance Snapshot (April 26 2026)
+## Performance Snapshot (April 28 2026)
 
 - Current model: 65.2% hit rate, 69 settled
 - Calibrated model: 66.7% hit rate, 45 settled
-- Context_raw: 2 live predictions (paper tracking, accumulating)
-- Overlap current/calibrated: 90 (0 current-only, 35 calibrated-only)
+- Context_raw: accumulating (paper tracking)
 - Pre-KO move (mean): -3.5% O2.5, -2.2% U2.5 (negative = market agrees, good)
 - CLV figures in UI: partially reliable — see legacy caveat above
 - Sample still small — Brier and edge are more meaningful than hit rate at this stage
+
+---
+
+## Recent Fixes (April 28 2026)
+
+### context_raw rolling lookup — noise token guard
+- **Problem**: `lookupRolling()` returned the first fuzzy match regardless of quality. Token `'united'` alone (overlap 0.50) caused Man Utd/Brentford pick to use Leeds United rolling stats.
+- **Fix**: `lookupRolling()` now collects all candidates, sorts by overlap, rejects if best candidate's only common tokens are in `ROLLING_NOISE_TOKENS`. Returns null → fixture skipped → no bad prediction logged.
+- **Files**: `src/utils/team-names.js` (ROLLING_NOISE_TOKENS export, `'manchester utd'` alias), `src/scrapers/orchestrator.js` (lookupRolling rewrite)
+- **Impact scan**: 1 confirmed mismatch (Man Utd/Brentford). 2 German records clean.
+
+### Suspicious row detection + audit logging
+- **Problem**: Cagliari/Atalanta pick used `homeO25pct=31, awayO25pct=31, homeAvgTG=2.19, awayAvgTG=2.19` — identical for both teams. No way to audit root cause without raw HTML.
+- **Fix**: Post-parse integrity checks in `match-discovery.js`. Six trigger codes. Saves full `rawCells[0..22]` snapshot to `suspicious-rows.jsonl`. Flags `suspicious`/`suspiciousReasons` on match object, propagated to `predictions.jsonl` inputs block.
+- **Files**: `src/scrapers/match-discovery.js`, `src/scrapers/orchestrator.js`, `src/engine/history.js`, `src/api/routes.js`, `src/config.js`
+- **New endpoint**: `GET /api/suspicious-rows`
+- **New meta field**: `suspiciousRowsFound` in `/api/status`
 
 ---
 
@@ -410,16 +486,6 @@ Completed: 2026-04-26
 - All-mode smart merge: dedupes by `fixtureId + direction + method`; merges rows across models where they agree; shows separate rows where they disagree; attaches `_models[]` array for badge rendering
 - Model badges rendered under match name in All mode: `Cur` (cyan), `Cal` (green), `Ctx` (indigo)
 - `loadShortlist()` reads `payload.context_raw` from API response
-
-### Live pipeline log evidence (April 26 2026)
-```
-[football-data] rolling: 65 matches loaded for BL1
-[orchestrator] context rolling: 18 teams loaded for germany
-[context] logged 2 predictions this refresh
-[orchestrator] context_raw: 2 predictions logged
-[orchestrator] context_raw shortlist: 2 matches
-[orchestrator] done. 579 scraped → 90 bettable → 26 unique shortlisted (10 current, 16 calibrated, 2 context_raw)
-```
 
 ### Roadmap
 - Stage 11 = forward calibration review at 200+ settled context_raw predictions per league

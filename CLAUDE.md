@@ -34,6 +34,70 @@ git push -u origin feature/your-branch-name
 
 ---
 
+## Documentation check — required before every commit
+
+After completing any meaningful piece of work, **before giving `git commit` or `git push` instructions**, Claude must explicitly check whether project documentation needs updating.
+
+### What counts as meaningful work
+
+Run the documentation check after work involving:
+- model logic or scoring logic
+- scraper behaviour or data-source changes
+- API shape changes (new endpoints, new fields, changed field semantics)
+- frontend/UI behaviour changes
+- logging or audit changes
+- bug fixes that affect interpretation of past or future predictions
+- workflow or deployment changes
+- anything that changes what should be monitored next
+
+Do **not** run a full docs update for trivial typo-only changes unless the docs are affected.
+
+### Required check process
+
+Before suggesting `git commit` or `git push`, explicitly check each of the following:
+
+1. Does `PROJECT-STATUS.md` need updating?
+2. Does `CHECKLIST.html` need updating?
+3. Are there stale checklist items that should be marked complete?
+4. Are there new monitoring, deferred, or future-work items to add?
+5. Did we change any model behaviour, data assumptions, API fields, or UI interpretation that future chats need to know?
+
+If docs need updating, update them before giving commit/push commands.
+
+If docs do not need updating, briefly state:
+`Docs checked: no PROJECT-STATUS.md or CHECKLIST.html changes needed.`
+
+### Documentation update rules
+
+When updating docs:
+- Keep updates practical and concise.
+- Clearly separate: completed fixes / current monitoring / known issues / deferred and future work.
+- Do not overstate profitability or imply real-money readiness.
+- Avoid repetitive "paper tracking" wording unless directly relevant.
+- Prefer exact file names, fields, endpoints, commands, and model-path names.
+- Preserve existing doc structure unless there is a clear reason to reorganise.
+
+### Default final sequence after completing work
+
+1. Verify code and app behaviour.
+2. Update `PROJECT-STATUS.md` and `CHECKLIST.html` if needed (or state explicitly that no update is needed).
+3. Show `git status --short`.
+4. Suggest exact `git add` list.
+5. Suggest commit message.
+6. Then push.
+
+**Do not skip step 2.**
+
+### Primary docs to keep fresh
+
+`PROJECT-STATUS.md` — summarises the current deployed state, active model paths, recent important fixes, and known/deferred issues.
+
+`CHECKLIST.html` — tracks completed items, monitoring items, deferred work, and future enhancements. Uses localStorage-persisted checkboxes.
+
+`CLAUDE.md` — update only when workflow rules, deployment conventions, or architectural constraints change.
+
+---
+
 ## Deploy sequence — always in this order
 
 ```bash
@@ -88,7 +152,7 @@ Daniel's Mac mounts the Unraid share at `/Volumes/appdata/goalscout`. Unraid see
 
 **Method A — Download + Finder copy (patch scripts, new files)**
 Claude produces a file with `create_file` and presents it for download. Daniel downloads it to his Mac and moves it into the correct location via Finder or terminal:
-- Patch scripts → `/Volumes/appdata/goalscout/scripts/patches/my-patch.js`
+- Patch scripts → `/Volumes/appdata/goalscout/scripts/patches/my-patch.py`
 - Source files → `/Volumes/appdata/goalscout/src/...`
 - Public files → `/Volumes/appdata/goalscout/public/index.html`
 
@@ -96,11 +160,13 @@ Claude produces a file with `create_file` and presents it for download. Daniel d
 Claude outputs the full updated file content. Daniel opens the file in VSCode and pastes over it.
 
 **Running patch scripts on Unraid**
-Patch scripts live in `scripts/patches/` and run directly on the Unraid host — no Docker needed, they edit host source files:
+Patch scripts live in `scripts/patches/`. They are Python scripts (`.py`) run via a throwaway Docker container — Unraid has no native Python:
 ```bash
-node /mnt/user/appdata/goalscout/scripts/patches/patch_something.js
+docker run --rm \
+  -v /mnt/user/appdata/goalscout:/mnt/user/appdata/goalscout \
+  python:3.11-slim \
+  python /mnt/user/appdata/goalscout/scripts/patches/patch_something.py
 ```
-Unraid has Node.js. Unraid does **not** have Python. All scripts must be `.js`.
 
 **Running one-off scripts that need the container environment**
 Place in `data/` (the only mounted volume) and run via `docker exec`:
@@ -155,7 +221,7 @@ Does NOT apply to `public/index.html`.
 Avoid bash heredocs when the script contains backticks, template literals, single quotes, or special characters. Options:
 - Write the file using the `create_file` tool and present it for download, then the user copies it to the host
 - Use `sed -i` for single-line substitutions on the host (no heredoc needed)
-- Multi-line JS edits in existing files: `sed -i` with careful escaping, or deliver a full replacement file
+- Multi-line edits to existing files: use Python `content.replace(old, new)` in a patch script — more reliable than `sed` or shell heredocs when content contains backticks, template literals, or single quotes
 
 ---
 
@@ -248,6 +314,36 @@ The comparison key for selectionType is `fixtureId + '__' + direction`, NOT `fix
 
 ---
 
+## Suspicious row detection (current/calibrated scraper path)
+
+Added April 2026. Detects data integrity anomalies in SoccerSTATS match rows **after** stats are parsed, **before** scoring. Does not skip rows or change scoring.
+
+### Trigger codes and severity
+
+| Code | Condition | Severity alone |
+|---|---|---|
+| `home_away_o25pct_identical` | home.o25pct === away.o25pct (both non-null) | `info` — integer match plausible at low GP |
+| `home_away_avgtg_identical` | home.avgTG === away.avgTG (both non-null) | `medium` |
+| `duplicated_core_profile` | Both o25pct AND avgTG identical simultaneously | `high` — Cagliari/Atalanta pattern |
+| `full_profile_identical` | All non-null numeric fields (o25pct, avgTG, csPct, ftsPct, winPct) identical | `critical` |
+| `missing_key_stat:<field>` | o25pct or avgTG is null after parsing | `high` per field |
+| `unexpected_timeidx:<value>` | timeIdx !== 11 — all 8 away offsets wrong | `critical` |
+
+Severity ladder: `info` → `medium` → `high` → `critical`. Two or more high-severity triggers → `critical`.
+
+### What gets written
+
+- `data/history/suspicious-rows.jsonl` — append-only snapshot including full `rawCells[0..22]`, `parsedHome`, `parsedAway`, `reasons`, `severity`, `fingerprint`
+- `match.suspicious = true` and `match.suspiciousReasons = [...]` set on the match object
+- If the match reaches `logPrediction()`, `inputs.suspicious` and `inputs.suspiciousReasons` are written to `predictions.jsonl`
+- `meta.suspiciousRowsFound` exposed in `/api/status`
+- `GET /api/suspicious-rows` returns last 50 snapshots
+
+### Known expected triggers
+Cup competition rows (UCL, Copa Libertadores, Copa Sudamericana) fire `missing_key_stat` on every refresh because SoccerSTATS carries no season-aggregate stats for those competitions. These rows have `hasStats=false` and never reach scoring or `predictions.jsonl`. This is expected behaviour, not a scraper bug.
+
+---
+
 ## Data files
 
 | File | Notes |
@@ -255,6 +351,7 @@ The comparison key for selectionType is `fixtureId + '__' + direction`, NOT `fix
 | `data/history/predictions.jsonl` | Append-only. Current/calibrated deduped by `fixtureId+predictionDate`. Context_raw deduped by `fixtureId+predictionDate+modelVersion`. |
 | `data/history/results.jsonl` | One entry per fixture. Deduped by `fixtureId`. |
 | `data/history/settlement-conflicts.jsonl` | Append-only. Written on source disagreements. |
+| `data/history/suspicious-rows.jsonl` | Append-only. Written by `match-discovery.js` when a row triggers data integrity checks. Contains full `rawCells` snapshot. |
 | `data/calibration/league-calibration.json` | Current/calibrated Platt params. May be sparse — needs 200+ settled preds. |
 | `data/calibration/germany_o25_v1.json` | Context_raw Platt params. Gitignored. |
 | `data/rolling-results/{league}.json` | 8-week FD.org rolling results cache. |
@@ -266,11 +363,12 @@ The comparison key for selectionType is `fixtureId + '__' + direction`, NOT `fix
 ## API surface
 
 ```
-GET  /api/status          → lastRefresh, lastSettlementChange, meta
+GET  /api/status          → lastRefresh, lastSettlementChange, meta (includes suspiciousRowsFound)
 GET  /api/shortlist       → { current, calibrated, context_raw, comparison }
 GET  /api/stats           → performance (per method, per market)
 GET  /api/predictions     → raw JSONL tail
 GET  /api/conflicts       → settlement conflicts
+GET  /api/suspicious-rows → last 50 suspicious row snapshots ([] if none yet)
 GET  /api/context/index   → backtest index (_index.json)
 GET  /api/context/backtest?league=&season= → backtest JSONL as JSON array
 POST /api/refresh         → trigger full refresh
@@ -317,5 +415,9 @@ POST /api/pre-kickoff     → trigger pre-KO odds capture
 - **`context-predictions.js` must store `direction` explicitly** — `context_direction` alone is not enough. `history.js` and the selectionType key both read `direction`. This was missing from the original implementation and required a backfill in April 2026.
 - **`require()` syntax check does not catch runtime bugs** — a variable out of scope inside a `.map()` callback passes the syntax check but throws at runtime. Always verify logic changes with real data, not just `node -e "require(...)"`.
 - **Docker mount is `data/` only** — `/app/src` is baked into the image. Scripts for one-off fixes must be placed in `data/` to be reachable inside the container at `/app/data/`. Do not attempt `docker cp` to paths outside the mount.
-- **Unraid has no `python3`** — all scripts must be Node.js. The Docker image is also Node.js Alpine with no Python.
+- **Patch scripts are Python, not Node** — patch scripts in `scripts/patches/` are `.py` files run via `docker run python:3.11-slim`. Unraid has no native Python. The Docker image is Node.js Alpine. Use `python:3.11-slim` throwaway containers for patch execution.
+- **Python `content.replace()` over `sed`** — for multi-line JS edits containing backticks, template literals, or single quotes, Python string replacement in a patch script is more reliable than `sed` or shell heredocs.
 - **Always append `docker logs -f goalscout` to every deploy command sequence** so the user can see startup output immediately.
+- **context_raw rolling lookup — noise token guard** — `lookupRolling()` rejects fuzzy matches whose only common tokens are in `ROLLING_NOISE_TOKENS` (e.g. `'united'`, `'city'`). A match accepted on noise tokens alone silently corrupts the prediction. The fix: require at least one meaningful token (not in NOISE set, length ≥ 4). Added April 2026 after Man Utd/Brentford context_raw pick used Leeds United rolling stats.
+- **SoccerSTATS cup rows fire `missing_key_stat` on every refresh** — UCL, Copa Libertadores, Copa Sudamericana rows have all-null stats. This is expected. They never reach scoring because `hasStats=false`. Do not treat these as scraper bugs.
+- **Suspicious row `duplicated_core_profile` is the meaningful alert** — `info` and `medium` severity triggers (single field equality at low GP) are often plausible coincidences. The pattern to investigate is `duplicated_core_profile` (o25pct AND avgTG both identical) or `critical` severity. This is the signature of the Cagliari/Atalanta data corruption case (April 2026).
