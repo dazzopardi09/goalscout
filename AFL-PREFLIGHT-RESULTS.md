@@ -105,21 +105,121 @@ AusSportsBetting is viable as the primary historical odds source for AFL line/sp
 
 ## 2. fitzRoy `fetch_betting_odds_footywire`
 
-**Status:** Not checked yet.
+**Status:** Checked.
+
+### Environment
+
+Initial Docker run failed because the base R container was missing system libraries required to compile `curl`, `xml2`, `openssl`, `httr`, `httr2`, and `rvest`.
+
+Rerunning with the required Linux dependencies installed allowed `fitzRoy` to install successfully.
+
+### Seasons tested
+
+Tested seasons: 2018, 2019, 2020, 2021, 2022, 2023, and 2024.
+
+### Results
+
+| Season | Result |
+|---|---:|
+| 2018 | 207 rows |
+| 2019 | 207 rows |
+| 2020 | 135 rows |
+| 2021 | NULL |
+| 2022 | NULL |
+| 2023 | NULL |
+| 2024 | NULL |
+
+### Columns returned for working seasons
+
+- `Date`
+- `Venue`
+- `Season`
+- `Round`
+- `Home.Team`
+- `Away.Team`
+- `Home.Score`
+- `Away.Score`
+- `Home.Margin`
+- `Away.Margin`
+- `Home.Win.Odds`
+- `Away.Win.Odds`
+- `Home.Win.Paid`
+- `Away.Win.Paid`
+- `Home.Line.Odds`
+- `Away.Line.Odds`
+- `Home.Line.Paid`
+- `Away.Line.Paid`
+
+### Key findings
+
+- fitzRoy odds data is available for 2018–2020 in this check.
+- It returned no data for 2021 onward.
+- It includes H2H odds and line odds.
+- It does not appear to include the actual handicap line value.
+- It does not include totals odds.
+- It does not include timestamps.
+- It does not include bookmaker names.
+- It is not suitable as a primary AFL odds source.
+
+### Assessment
+
+**Result:** ⚠️ Warn / supplementary only.
+
+fitzRoy should not be used as the odds backbone for the AFL feasibility study. AusSportsBetting remains the primary historical odds source.
+
+fitzRoy can still be used for fixtures, results, player stats, team stats, and lineups.
 
 ---
 
 ## 3. The Odds API AFL live endpoint
 
-**Status:** Not checked yet.
+**Status:** Checked.
+
+### Sports endpoint
+
+`aussierules_afl` is active.
+
+```json
+{
+  "key": "aussierules_afl",
+  "group": "Aussie Rules",
+  "title": "AFL",
+  "description": "Aussie Football",
+  "active": true,
+  "has_outrights": false
+}
 
 ---
 
+
+## Then update the overall decision
+
+```markdown
 ## Overall decision
 
-**Current status:** 🟡 In progress.
+**Result:** 🟢 Green.
 
-AusSportsBetting has passed the main historical odds check. Remaining checks:
+The AFL feasibility study is viable.
 
-1. fitzRoy odds inspection
-2. The Odds API AFL live support for H2H, spreads, totals
+Reasons:
+
+- Historical AFL line/spread data is available via AusSportsBetting with near-complete post-2013 closing-line coverage.
+- Historical totals data is available but has higher missingness.
+- fitzRoy is not useful as an odds backbone, but remains useful for AFL fixtures/results/stats/lineups.
+- The Odds API returns live AFL H2H, spreads, and totals across multiple AU bookmakers.
+
+### Recommended next step
+
+Proceed to a tightly scoped AFL line/spread feasibility study.
+
+Do not start with totals, props, quarters, or complex ML.
+
+Start with:
+
+1. AFL line/spread only.
+2. 2014–2019 and 2022–2024 development/backtest windows.
+3. 2025 held-out test.
+4. 2020 excluded.
+5. 2021 sensitivity only.
+6. Simple baselines first: market baseline, Elo/home advantage, recent form.
+7. CLV measured in line points first, not percentage.
