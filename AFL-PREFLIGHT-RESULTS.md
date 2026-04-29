@@ -188,11 +188,9 @@ fitzRoy can still be used for fixtures, results, player stats, team stats, and l
   "active": true,
   "has_outrights": false
 }
+```
 
 ---
-
-
-## Then update the overall decision
 
 ```markdown
 ## Overall decision
