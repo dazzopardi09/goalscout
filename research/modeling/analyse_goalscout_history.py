@@ -412,6 +412,26 @@ def main() -> int:
         print("No settled predictions found — nothing to analyse.")
         return 0
 
+    # ---- modelVersion breakdown ----
+    mv_deduped: Dict[str, int] = defaultdict(int)
+    for p in annotated:
+        mv_deduped[p.get("modelVersion") or "missing"] += 1
+
+    mv_settled: Dict[str, int] = defaultdict(int)
+    for p in settled:
+        mv_settled[p.get("modelVersion") or "missing"] += 1
+
+    all_versions = sorted(
+        set(list(mv_deduped.keys()) + list(mv_settled.keys()))
+    )
+
+    print("  Model versions (deduped / settled):")
+    for mv in all_versions:
+        d = mv_deduped.get(mv, 0)
+        s = mv_settled.get(mv, 0)
+        print(f"    {mv:<20} deduped={d:>4}  settled={s:>4}")
+    print()
+
     # ---- CLV availability ----
     clv_clean = [
         p
