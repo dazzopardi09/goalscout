@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import io
 import math
 import sys
@@ -399,6 +400,79 @@ def _analyse_holdout(
 
 
 # ---------------------------------------------------------------------------
+# Write per-league model output JSON (consumed by evaluate_odds.py)
+# ---------------------------------------------------------------------------
+
+def _write_model_output_json(
+    cfg: Dict[str, Any],
+    params: Any,
+    holdout: List[Dict[str, Any]],
+    input_rows: int,
+    train_rows: int,
+) -> None:
+    """
+    Write outputs/{slug}_poisson.json with the fields expected by evaluate_odds.py:
+      - league, model, input_rows, train_rows, holdout_rows
+      - predictions[]: date, home_team, away_team, p_over_2_5, actual_over_2_5,
+                       home_goals, away_goals, expected_home_goals, expected_away_goals
+
+    Silently skips any holdout match whose teams are not in the trained params.
+    """
+    slug = cfg["slug"]
+    label = cfg["label"]
+    out_path = ROOT / "outputs" / f"{slug}_poisson.json"
+
+    predictions: List[Dict[str, Any]] = []
+    skipped = 0
+
+    for m in holdout:
+        if (
+            m["home_team"] not in params.team_strengths
+            or m["away_team"] not in params.team_strengths
+        ):
+            skipped += 1
+            continue
+
+        matrix, lh, la = build_scoreline_matrix(
+            params,
+            m["home_team"],
+            m["away_team"],
+        )
+        ou = market_over_under(matrix, line=2.5)
+        actual_total = m["home_goals"] + m["away_goals"]
+
+        predictions.append({
+            "date": m["date"].isoformat(),
+            "home_team": m["home_team"],
+            "away_team": m["away_team"],
+            "p_over_2_5": round(ou["over"], 4),
+            "actual_over_2_5": actual_total > 2,
+            "home_goals": m["home_goals"],
+            "away_goals": m["away_goals"],
+            "expected_home_goals": round(lh, 4),
+            "expected_away_goals": round(la, 4),
+        })
+
+    doc = {
+        "league": label,
+        "model": "poisson",
+        "input_rows": input_rows,
+        "train_rows": train_rows,
+        "holdout_rows": len(holdout),
+        "predictions": predictions,
+    }
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+
+    skipped_note = f" ({skipped} skipped — unknown teams)" if skipped else ""
+    print(
+        f"    JSON: wrote {len(predictions)} holdout predictions "
+        f"to {out_path.name}{skipped_note}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Console display helpers
 # ---------------------------------------------------------------------------
 
@@ -594,6 +668,11 @@ def main() -> int:
         # Threshold analysis
         rows = _analyse_holdout(params, holdout_matches, label, input_rows,
                                 len(train_matches))
+
+        # Write per-league JSON for evaluate_odds.py
+        _write_model_output_json(cfg, params, holdout_matches, input_rows,
+                                 len(train_matches))
+
         _print_league_table(label, rows)
         all_rows.extend(rows)
 
