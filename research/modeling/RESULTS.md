@@ -700,3 +700,101 @@ Current implementation direction:
 4. Add season-split stability checks before any production integration.
 5. Compare live GoalScout tip-time odds against these zones before treating them as actionable.
 
+
+---
+
+## Milestone 10 — Candidate Zone Ranking
+
+Added `rank_candidate_zones.py`.
+
+Purpose: convert the classified calibration zones into a ranked shortlist with a single `quality_score` and a practical recommendation.
+
+The script reads:
+
+- `outputs/calibration_report.csv`
+
+It writes:
+
+- `outputs/candidate_zone_rankings.csv`
+
+It separates zones into:
+
+| Recommendation | Meaning |
+|---|---|
+| `forward_track` | Strong enough to monitor live, but still not production betting logic |
+| `watch_only` | Interesting, but too small, noisy, weak, or calibration-sensitive |
+| `avoid` | Negative score, rejected classification, or contradiction between edge and ROI |
+
+The ranking is research-only. It does not change GoalScout live behaviour.
+
+### Forward-Track Criteria Used
+
+| Criterion | Value |
+|---|---:|
+| Minimum quality score | `>= 5.0` |
+| Minimum sample size | `N >= 40` |
+| Minimum opening ROI | `>= 3.0%` |
+| Required classification | `Pass` |
+| Major contradiction flags allowed | No |
+
+### Forward-Track Zones
+
+| Rank | League | Side | Threshold | N | Hit rate | ROI open | Open edge | Close edge | Score | Read |
+|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 1 | Serie A | Under | <= 0.40 | 57 | 66.7% | +11.3% | +5.4% | +5.1% | +15.31 | Cleanest candidate |
+| 2 | League Two | Under | <= 0.40 | 56 | 69.6% | +13.9% | +3.2% | +2.3% | +12.82 | Strong candidate |
+| 3 | Eredivisie | Over | >= 0.65 | 40 | 77.5% | +13.4% | +3.2% | +3.3% | +11.97 | Interesting, but calibration warning |
+| 4 | Serie A | Under | <= 0.45 | 96 | 61.5% | +4.6% | +3.7% | +3.5% | +6.90 | Broader safer Serie A Under zone |
+| 5 | Bundesliga | Over | >= 0.65 | 67 | 71.6% | +3.9% | +2.8% | +2.5% | +5.83 | Coherent but lower ROI |
+
+### Key Interpretation
+
+The ranking layer successfully filtered out zones that looked attractive on one metric but failed the broader evidence test.
+
+Examples of zones correctly kept out:
+
+| Zone | Issue |
+|---|---|
+| La Liga 2 Over >= 0.55 | Strong close edge, but weak ROI and poor calibration diff |
+| League Two Overs | Positive theoretical edge in places, but poor realised ROI |
+| Serie A Overs | High-confidence Over zones were badly overconfident |
+| Scotland Overs | High historical hit rate, but negative open and close edge |
+| High-edge tiny samples | Often flashy ROI, but too few matches to trust |
+
+This supports the current modelling direction:
+
+`league + side + probability zone + odds validation + calibration + ranking`
+
+The best immediate live forward-tracking set is:
+
+1. Serie A Under <= 0.40
+2. League Two Under <= 0.40
+3. Eredivisie Over >= 0.65
+4. Serie A Under <= 0.45
+5. Bundesliga Over >= 0.65
+
+### Updated Practical Direction
+
+Do not wire these into betting logic yet.
+
+Next step is a live forward-tracking layer that logs when upcoming GoalScout matches qualify for one of the forward-track zones, along with:
+
+- model probability
+- market odds
+- implied probability
+- edge
+- captured odds
+- closing odds when available
+- final result
+- CLV
+- ROI
+
+Only after enough live forward-tracked samples should any zone be considered for production decision logic.
+
+### Next Modelling Priorities
+
+1. Add live forward-tracking for the 5 candidate zones.
+2. Store candidate-zone metadata alongside any logged prediction.
+3. Track candidate-zone CLV and ROI separately from existing baseline/context history.
+4. Add season-split stability checks before any probability correction.
+5. Continue expanding alternate data support for A-League, Argentina, Saudi Pro League, Brazil, Sweden, and Denmark.
