@@ -7,11 +7,19 @@
 //   2. Match scores to pending predictions by commence_time + teams
 //   3. Fetch current odds for CLV (closing line value) calculation
 //   4. Call settlePrediction() and updatePreKickoffOdds() in history.js
+//   5. Capture near-close odds 3–15 minutes before kickoff (captureClosingOdds)
+//
+// CLV note:
+//   closingOdds is written by captureClosingOdds() 3–15 min before kickoff.
+//   settlePrediction() uses resolvedClosingOdds = closingOdds ?? p.closingOdds,
+//   so a clean capture is never overwritten by the settlement-time odds fetch.
+//   updatePreKickoffOdds() only writes preKickoffOdds + preKickoffMovePct.
 //
 // The-Odds-API /scores returns results for completed matches.
 // We use the 'daysFrom' parameter to look back up to 3 days.
 // ─────────────────────────────────────────────────────────────
 
+const fs     = require('fs');
 const config = require('../config');
 const { readJSONL } = require('../engine/history');
 const { settlePrediction, updatePreKickoffOdds } = require('../engine/history');
@@ -282,4 +290,185 @@ async function fetchCurrentOddsForPending() {
   return { updated };
 }
 
-module.exports = { fetchScoresAndSettle, fetchCurrentOddsForPending };
+// ── Near-close odds capture ───────────────────────────────────
+//
+// Captures odds 3–15 minutes before kickoff for pending predictions.
+// Writes closingOdds + closingOddsCapturedAt only — no other fields touched.
+// Never overwrites an existing closingOdds value.
+//
+// Batches predictions by sportKey so there is at most one Odds API call
+// per league per sweep. Returns diagnostic counters for log inspection.
+//
+// Ported from origin/fix/settlement-validation (fca442c).
+// Adaptations from source:
+//   - teamsMatch used inline (not imported from utils/team-names)
+//   - mapLeagueSlugToSportKey used (not getOddsKey)
+//   - config.ODDS_REGIONS || 'au' (not 'au,uk')
+
+const CLOSE_WINDOW_MIN_MS =  3 * 60 * 1000; //  3 minutes
+const CLOSE_WINDOW_MAX_MS = 15 * 60 * 1000; // 15 minutes
+
+async function captureClosingOdds() {
+  const now = Date.now();
+  const predictions = readJSONL(config.PREDICTIONS_FILE);
+
+  const eligible = predictions.filter(p => {
+    if (p.status !== 'pending') return false;
+    if (p.closingOdds != null) return false;   // already captured
+    if (!p.commenceTime) return false;
+
+    const koMs = new Date(p.commenceTime).getTime();
+    const msToKo = koMs - now;
+
+    return msToKo >= CLOSE_WINDOW_MIN_MS && msToKo <= CLOSE_WINDOW_MAX_MS;
+  });
+
+  if (eligible.length === 0) return { eligible: 0 };
+
+  console.log(`[close-capture] ${eligible.length} eligible predictions in close window`);
+
+  const { mapLeagueSlugToSportKey } = require('../odds/the-odds-api');
+
+  // Group by sportKey — one API call per key
+  const byKey = new Map();
+  for (const p of eligible) {
+    const key = mapLeagueSlugToSportKey ? mapLeagueSlugToSportKey(p.leagueSlug) : null;
+    if (!key) continue;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(p);
+  }
+
+  const counters = {
+    eligible:         eligible.length,
+    sportKeysFetched: 0,
+    captured:         0,
+    noMatch:          0,
+    noMarket:         0,
+    noPrice:          0,
+    errors:           0,
+  };
+
+  for (const [sportKey, preds] of byKey) {
+    let oddsData;
+    try {
+      oddsData = await oddsApiRequest(`/v4/sports/${sportKey}/odds`, {
+        regions:    config.ODDS_REGIONS || 'au',
+        markets:    'totals',
+        oddsFormat: 'decimal',
+      });
+      counters.sportKeysFetched++;
+    } catch (err) {
+      console.warn(`[close-capture] fetch failed for ${sportKey}: ${err.message}`);
+      counters.errors += preds.length;
+      continue;
+    }
+
+    if (!oddsData || !Array.isArray(oddsData)) {
+      console.warn(`[close-capture] unexpected response for ${sportKey}`);
+      counters.errors += preds.length;
+      continue;
+    }
+
+    for (const p of preds) {
+      try {
+        // Find the event — must be unambiguous
+        const matches = oddsData.filter(e =>
+          teamsMatch(e.home_team, e.away_team, p.homeTeam, p.awayTeam)
+        );
+
+        if (matches.length === 0) {
+          counters.noMatch++;
+          continue;
+        }
+
+        if (matches.length > 1) {
+          // Ambiguous — skip to avoid writing wrong data
+          console.warn(`[close-capture] ambiguous match for ${p.homeTeam} vs ${p.awayTeam} (${matches.length} results) — skipping`);
+          counters.noMatch++;
+          continue;
+        }
+
+        const event = matches[0];
+
+        // Resolve which side we want — must be explicitly over or under 2.5.
+        // Three canonical signals checked in order: market, selection, direction.
+        // If none matches, skip — do not guess or fall through to Under by default.
+        const wantsOver  = p.market === 'over_2.5'  || p.selection === 'over'  || p.direction === 'o25';
+        const wantsUnder = p.market === 'under_2.5' || p.selection === 'under' || p.direction === 'u25';
+
+        if (!wantsOver && !wantsUnder) {
+          counters.noMarket++;
+          continue;
+        }
+
+        // Find the 2.5 totals market for the correct side
+        let closePrice = null;
+        for (const bk of event.bookmakers || []) {
+          const mkt = bk.markets?.find(m => m.key === 'totals');
+          if (!mkt) continue;
+
+          const outcome = wantsOver
+            ? mkt.outcomes?.find(o => o.name === 'Over'  && parseFloat(o.point) === 2.5)
+            : mkt.outcomes?.find(o => o.name === 'Under' && parseFloat(o.point) === 2.5);
+
+          if (outcome?.price) {
+            closePrice = outcome.price;
+            break;
+          }
+        }
+
+        if (closePrice == null) {
+          counters.noPrice++;
+          continue;
+        }
+
+        // Write closingOdds + timestamp — do not touch any other field.
+        // Re-read the file before each write so concurrent cron ticks
+        // do not clobber each other's output.
+        const allPreds = readJSONL(config.PREDICTIONS_FILE);
+        let wrote = false;
+
+        const updated = allPreds.map(r => {
+          if (
+            r.fixtureId !== p.fixtureId ||
+            r.market    !== p.market    ||
+            (r.method || 'current') !== (p.method || 'current')
+          ) return r;
+
+          if (r.closingOdds != null) return r; // idempotency guard: never overwrite
+
+          wrote = true;
+          return {
+            ...r,
+            closingOdds:           closePrice,
+            closingOddsCapturedAt: new Date().toISOString(),
+          };
+        });
+
+        if (wrote) {
+          fs.writeFileSync(
+            config.PREDICTIONS_FILE,
+            updated.map(l => JSON.stringify(l)).join('\n') + '\n',
+            'utf8'
+          );
+          counters.captured++;
+          console.log(`[close-capture] captured ${p.homeTeam} vs ${p.awayTeam} [${p.market}]: ${closePrice}`);
+        }
+
+      } catch (err) {
+        console.warn(`[close-capture] error for ${p.homeTeam} vs ${p.awayTeam}: ${err.message}`);
+        counters.errors++;
+      }
+    }
+  }
+
+  console.log(
+    `[close-capture] done — eligible=${counters.eligible}` +
+    ` fetched=${counters.sportKeysFetched} captured=${counters.captured}` +
+    ` noMatch=${counters.noMatch} noMarket=${counters.noMarket}` +
+    ` noPrice=${counters.noPrice} errors=${counters.errors}`
+  );
+
+  return counters;
+}
+module.exports = { fetchScoresAndSettle, fetchCurrentOddsForPending, captureClosingOdds };

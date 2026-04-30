@@ -3,6 +3,19 @@
 // Historical prediction logger + stats engine.
 // Backwards compatible: handles both old records (no status field,
 // settlement tracked in results.jsonl) and new records (status inline).
+//
+// CLV note:
+//   closingOdds is captured separately by captureClosingOdds() (settler.js)
+//   3-15 minutes before kickoff. updatePreKickoffOdds() only writes
+//   preKickoffOdds and preKickoffMovePct — it does not touch closingOdds.
+//   settlePrediction() uses resolvedClosingOdds = closingOdds ?? p.closingOdds
+//   so an existing clean capture is never overwritten by the settlement-time
+//   odds fetch (which usually returns null for completed events).
+//
+// preKickoffMovePct sign convention:
+//   positive = pre-KO price drifted longer than tip (market moved against us)
+//   negative = pre-KO price shortened (market agrees with our pick)
+//   Matches UI color logic: positive → red, negative → green.
 // ─────────────────────────────────────────────────────────────
 
 const fs     = require('fs');
@@ -119,8 +132,12 @@ function updatePreKickoffOdds(fixtureId, market, preKoPrice) {
   const newLines = predictions.map(p => {
     if (p.fixtureId !== fixtureId || p.market !== market) return p;
     if (p.preKickoffOdds != null) return p;
+    // Sign convention: (preKoPrice / marketOdds - 1) × 100
+    //   positive = pre-KO drifted longer than tip (market moved against pick) → red
+    //   negative = pre-KO shortened vs tip (market agrees)                    → green
+    // Verified empirically against live records (e.g. Sporting CP/Tondela: -2.26).
     const movePct = (p.marketOdds != null && preKoPrice != null)
-      ? Math.round(((p.marketOdds / preKoPrice) - 1) * 10000) / 100 : null;
+      ? Math.round(((preKoPrice / p.marketOdds) - 1) * 10000) / 100 : null;
     updated = true;
     return { ...p, preKickoffOdds: preKoPrice, preKickoffMovePct: movePct };
   });
@@ -141,12 +158,17 @@ function settlePrediction(fixtureId, market, { homeGoals, awayGoals, closingOdds
     const won = market === 'over_2.5' ? totalGoals > 2.5
               : market === 'btts'     ? homeGoals > 0 && awayGoals > 0
               : null;
-    const clvPct = (p.marketOdds != null && closingOdds != null)
-      ? Math.round(((p.marketOdds / closingOdds) - 1) * 10000) / 100 : null;
+    // Honor any closingOdds already written by captureClosingOdds() before
+    // this settlement run. The /odds endpoint usually returns nothing for
+    // completed events, so closingOdds from the settler is often null.
+    // resolvedClosingOdds preserves a clean pre-KO capture over null.
+    const resolvedClosingOdds = closingOdds ?? p.closingOdds ?? null;
+    const clvPct = (p.marketOdds != null && resolvedClosingOdds != null)
+      ? Math.round(((p.marketOdds / resolvedClosingOdds) - 1) * 10000) / 100 : null;
     updated = true;
     return {
       ...p,
-      closingOdds:  closingOdds ?? null,
+      closingOdds:  resolvedClosingOdds,
       clvPct,
       status:    won == null ? 'void' : won ? 'settled_won' : 'settled_lost',
       result:    `${homeGoals}-${awayGoals}`,

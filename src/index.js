@@ -10,7 +10,7 @@ const cron    = require('node-cron');
 const apiRoutes  = require('./api/routes');
 const { runFullRefresh, getRefreshState } = require('./scrapers/orchestrator');
 const { ensureDirs } = require('./utils/storage');
-const { fetchScoresAndSettle, fetchCurrentOddsForPending } = require('./engine/settler');
+const { fetchScoresAndSettle, fetchCurrentOddsForPending, captureClosingOdds } = require('./engine/settler');
 const config = require('./config');
 
 const app = express();
@@ -81,6 +81,16 @@ cron.schedule(config.SETTLE_CRON, async () => {
   } catch (err) {
     console.error('[cron/settle] failed:', err.message);
   }
+});
+
+// ── Near-close odds capture cron (every 5 minutes) ───────────
+// Targets predictions with kickoff 3–15 minutes away.
+// Writes closingOdds + closingOddsCapturedAt only — never overwrites.
+// Zero Odds API calls on ticks where no match is in the close window.
+cron.schedule(config.CLOSE_CAPTURE_CRON, () => {
+  captureClosingOdds().catch(err => {
+    console.error('[cron/close-capture] failed:', err.message);
+  });
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────

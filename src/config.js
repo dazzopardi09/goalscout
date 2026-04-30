@@ -50,6 +50,7 @@ module.exports = {
   CRON_SCHEDULE:   '5 */6 * * *',
   PREKICKOFF_CRON: '*/30 * * * *',
   SETTLE_CRON:     '15 */3 * * *',
+  CLOSE_CAPTURE_CRON: process.env.CLOSE_CAPTURE_CRON || '*/5 * * * *',
 
   // ── Shortlist scoring thresholds ──────────────────────────
   THRESHOLDS: {
