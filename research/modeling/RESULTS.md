@@ -578,3 +578,125 @@ Next modelling priorities:
 4. Build Format B parsers for Argentina, Sweden, Denmark, and Brazil.
 5. Find alternate data sources for A-League and possibly Saudi Pro League.
 6. Only after more validation, consider live paper-tracking integration.
+
+---
+
+## Milestone 10 — Strict Classification Run
+
+Added a stricter `calibrate_zones.py` run across all 16 supported football-data.co.uk Format A leagues.
+
+This was used to reduce noise from the loose classification run and keep only zones with stronger sample size, positive market edge, and positive realised ROI.
+
+### Strict run settings
+
+- Minimum sample size: N >= 40
+- Minimum opening edge: greater than +2.0%
+- Minimum closing edge: greater than +2.0%
+- Minimum opening ROI: greater than +3.0%
+- Watchlist ROI floor: -3.0%
+
+### Strict classification result
+
+- Pass: 5
+- Watchlist: 47
+- Reject: 68
+
+The stricter run removed marginal zones such as:
+
+- Bundesliga Over >= 0.55
+- Bundesliga Over >= 0.60
+- LaLiga2 Over >= 0.55
+
+These zones were technically positive under looser rules, but were too thin or too noisy to treat as serious carry-forward candidates.
+
+### Strict pass zones
+
+1. League Two Under <= 0.40
+   - N: 56
+   - Hit rate: 69.6%
+   - Opening edge: +3.2%
+   - Opening ROI: +13.9%
+   - Closing edge: +2.3%
+   - Read: cleanest original candidate.
+
+2. Eredivisie Over >= 0.65
+   - N: 40
+   - Hit rate: 77.5%
+   - Opening edge: +3.2%
+   - Opening ROI: +13.4%
+   - Closing edge: +3.3%
+   - Read: strongest new candidate from the full 16-league scan.
+
+3. Serie A Under <= 0.40
+   - N: 57
+   - Hit rate: 66.7%
+   - Opening edge: +5.4%
+   - Opening ROI: +11.3%
+   - Closing edge: +5.1%
+   - Read: very strong candidate.
+
+4. Serie A Under <= 0.45
+   - N: 96
+   - Hit rate: 61.5%
+   - Opening edge: +3.7%
+   - Opening ROI: +4.6%
+   - Closing edge: +3.5%
+   - Read: broader and safer version of the Serie A Under signal.
+
+5. Bundesliga Over >= 0.65
+   - N: 67
+   - Hit rate: 71.6%
+   - Opening edge: +2.8%
+   - Opening ROI: +3.9%
+   - Closing edge: +2.5%
+   - Read: coherent but thinner ROI than the top candidates.
+
+### Current carry-forward zones
+
+Primary zones for live paper-tracking:
+
+1. League Two Under <= 0.40
+2. Serie A Under <= 0.40
+3. Eredivisie Over >= 0.65
+4. Serie A Under <= 0.45
+5. Bundesliga Over >= 0.65
+
+These remain research candidates only. They are not proof of live edge because validation used football-data.co.uk aggregated historical opening and closing odds, not GoalScout's actual tip-time odds.
+
+### Watchlist interpretation
+
+The Watchlist is still noisy and should not be treated as a list of near-passes.
+
+Useful watchlist examples:
+
+- Bundesliga Under <= 0.45
+  - Strong result, but N = 29, below the strict sample threshold.
+
+- League Two Under <= 0.35
+  - Coherent signal, but still below strict sample threshold.
+
+- EPL Under <= 0.45
+  - Interesting, but sample is still small.
+
+Watchlist zones with N between 1 and 9 should be ignored until more data exists.
+
+Zones with positive theoretical edge but poor realised ROI should remain avoided. Examples include Portugal Under, Serie B Under, League Two Over, and Serie A Over.
+
+### Updated modelling direction
+
+The strict run reinforces the main conclusion:
+
+GoalScout should not deploy a general Poisson Over/Under betting model.
+
+The useful pattern is:
+
+league + side + probability threshold + odds validation + calibration classification
+
+Current implementation direction:
+
+1. Forward-track only the 5 strict-pass zones.
+2. Keep watchlist zones visible only for research.
+3. Exclude rejected danger zones from any live recommendation logic.
+4. Add season-split stability checks before any production integration.
+5. Compare live GoalScout tip-time odds against these zones before treating them as actionable.
+
