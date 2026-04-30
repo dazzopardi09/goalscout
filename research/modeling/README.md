@@ -55,9 +55,21 @@ A single season produces a small holdout (~76 matches) with high-variance metric
 # Verify the tau fix and DC=Poisson reduction (no CSV needed)
 python test_smoke.py
 
-# Train and evaluate (requires inputs/epl_matches.csv)
-python train_epl.py --model poisson
-python train_epl.py --model dixon_coles
+# Fetch historical match data
+python fetch_epl.py --league EPL
+python fetch_epl.py --league Championship
+
+# Train and evaluate (requires inputs/<league>_matches.csv)
+python train_league.py --league EPL --model poisson
+python train_league.py --league EPL --model dixon_coles
+python train_league.py --league Championship --model poisson
+python train_league.py --league Championship --model dixon_coles
+
+# Threshold / pick-zone analysis (requires outputs/*.json from train_league.py)
+python analyse_thresholds.py                                   # all outputs/*.json
+python analyse_thresholds.py --file outputs/epl_poisson.json   # single file
+python analyse_thresholds.py --league EPL                      # filter by league
+python analyse_thresholds.py --league EPL --model poisson      # filter by both
 ```
 
 ## Output
@@ -76,8 +88,11 @@ data quality block, and training config. Keys at top level:
 | File | Purpose | Origin |
 |---|---|---|
 | `parameters.py` | `LeagueModelParams`, `TeamStrength` dataclasses | Verbatim from old backend |
-| `scoreline.py` | Builds `P(X=x, Y=y)` scoreline matrix with optional Dixon-Coles tau | Old backend (1 import path edit) |
+| `scoreline.py` | Builds `P(X=x, Y=y)` scoreline matrix with optional Dixon-Coles tau | Old backend (1 import path edit, tau fixed M2) |
 | `markets.py` | Derives 1X2, BTTS, O/U markets from scoreline matrix | Old backend (1 import path edit) |
-| `trainer.py` | Dixon-Coles / Poisson MLE via `scipy.optimize` | Old backend (DB layer stripped) |
+| `trainer.py` | Dixon-Coles / Poisson MLE via `scipy.optimize` | Old backend (DB layer stripped, tau fixed M2) |
 | `evaluator.py` | Chronological holdout split, Brier score, log-loss | New |
-| `train_epl.py` | Pipeline entry: CSV → split → train → predict → JSON | New |
+| `fetch_epl.py` | Downloads football-data.co.uk CSVs → `inputs/*.csv` | New (M3) |
+| `train_league.py` | Pipeline: CSV → split → train → predict → JSON | New (M4, replaces train_epl.py) |
+| `test_smoke.py` | Tau correctness + DC=Poisson reduction checks | New (M2) |
+| `analyse_thresholds.py` | Pick-zone hit rates, fair odds, Brier/log-loss per threshold | New (M5) |
