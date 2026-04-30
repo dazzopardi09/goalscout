@@ -546,8 +546,23 @@ async function captureClosingOdds() {
           const mkt = bk.markets?.find(m => m.key === 'totals');
           if (!mkt) continue;
 
-          const outcome = p.market === 'over_2.5'
-            ? mkt.outcomes?.find(o => o.name === 'Over'  && parseFloat(o.point) === 2.5)
+          const wantsOver =
+            p.market === 'over_2.5' ||
+            p.selection === 'over' ||
+            p.direction === 'o25';
+
+          const wantsUnder =
+            p.market === 'under_2.5' ||
+            p.selection === 'under' ||
+            p.direction === 'u25';
+
+          if (!wantsOver && !wantsUnder) {
+            counters.noMarket++;
+            continue;
+          }
+
+          const outcome = wantsOver
+            ? mkt.outcomes?.find(o => o.name === 'Over' && parseFloat(o.point) === 2.5)
             : mkt.outcomes?.find(o => o.name === 'Under' && parseFloat(o.point) === 2.5);
 
           if (outcome?.price) {

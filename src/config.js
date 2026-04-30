@@ -52,9 +52,10 @@ module.exports = {
   USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 
   // ── Schedules ─────────────────────────────────────────────
-  CRON_SCHEDULE:   '5 */6 * * *',
-  PREKICKOFF_CRON: '*/30 * * * *',
-  SETTLE_CRON:     '15 */3 * * *',
+  CRON_SCHEDULE:       '5 */6 * * *',
+  PREKICKOFF_CRON:     '*/30 * * * *',
+  CLOSE_CAPTURE_CRON:  process.env.CLOSE_CAPTURE_CRON || '*/5 * * * *',
+  SETTLE_CRON:         '15 */3 * * *',
 
   // ── Shortlist scoring thresholds ──────────────────────────
   THRESHOLDS: {

@@ -88,9 +88,9 @@ cron.schedule('*/30 * * * *', () => {
 // Targets predictions with kickoff 3–15 minutes away.
 // Writes closingOdds + closingOddsCapturedAt only — never overwrites.
 // Zero API calls on ticks where no match is in the close window.
-cron.schedule('*/5 * * * *', () => {
+cron.schedule(config.CLOSE_CAPTURE_CRON, () => {
   captureClosingOdds().catch(err => {
-    console.error('[cron] close capture failed:', err.message);
+    console.error('[cron/close-capture] failed:', err.message);
   });
 });
 
