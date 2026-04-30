@@ -487,8 +487,14 @@ def _edge_pct_str(v: Any) -> str:
     if _is_missing(v):
         return "—"
 
-    sign = "+" if float(v) >= 0 else ""
-    return f"{sign}{float(v):.1f}%"
+    value = float(v)
+
+    # Avoid ugly '+-0.0%' / '-0.0%' output caused by tiny rounded values.
+    if abs(value) < 0.05:
+        value = 0.0
+
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value:.1f}%"
 
 
 def _roi_str(v: Any) -> str:
