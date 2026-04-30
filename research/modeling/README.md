@@ -70,6 +70,13 @@ python analyse_thresholds.py                                   # all outputs/*.j
 python analyse_thresholds.py --file outputs/epl_poisson.json   # single file
 python analyse_thresholds.py --league EPL                      # filter by league
 python analyse_thresholds.py --league EPL --model poisson      # filter by both
+
+# Multi-league discovery scan (Milestone 6)
+python run_league_scan.py                                      # all 16 Format A leagues
+python run_league_scan.py --leagues EPL Championship LeagueOne LeagueTwo
+python run_league_scan.py --leagues Bundesliga                 # single league
+python run_league_scan.py --no-cache                           # force re-fetch
+python run_league_scan.py --dry-run                            # list leagues, no training
 ```
 
 ## Output
@@ -96,3 +103,4 @@ data quality block, and training config. Keys at top level:
 | `train_league.py` | Pipeline: CSV → split → train → predict → JSON | New (M4, replaces train_epl.py) |
 | `test_smoke.py` | Tau correctness + DC=Poisson reduction checks | New (M2) |
 | `analyse_thresholds.py` | Pick-zone hit rates, fair odds, Brier/log-loss per threshold | New (M5) |
+| `run_league_scan.py` | Multi-league Poisson O2.5 discovery scan, writes `outputs/league_scan_summary.csv` | New (M6) |
