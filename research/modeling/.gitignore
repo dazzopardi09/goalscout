@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# venv
+venv/
+.venv/
+
+# OS
+.DS_Store
+
+# Local data and outputs (committing the schema, not the artefacts)
+inputs/*.csv
+inputs/*.json
+outputs/*.json
