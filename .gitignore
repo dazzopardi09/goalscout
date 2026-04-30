@@ -1,3 +1,6 @@
 node_modules/
 data/
 *.tmp
+
+# GoalScout modelling generated outputs
+research/modeling/outputs/*.csv
