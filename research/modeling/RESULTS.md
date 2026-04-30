@@ -423,3 +423,158 @@ Next modelling priorities:
 4. Find an alternate data source for A-League and possibly Saudi Pro League.
 5. Add a serious candidate ranking metric that balances sample size, opening EV, realised ROI, and closing edge.
 6. Only then integrate the strongest validated zones back into the live GoalScout app.
+
+---
+
+## Milestone 9 — Calibration Zone Classification
+
+Added `calibrate_zones.py`.
+
+Purpose: combine the Poisson holdout predictions and historical odds validation into a practical decision report.
+
+The script reads:
+
+- `outputs/{slug}_poisson.json`
+- `outputs/odds_validation.csv`
+
+It writes:
+
+- `outputs/calibration_report.csv`
+
+It prints three tables:
+
+| Table | Purpose |
+|---|---|
+| League + side bias summary | Shows whether the model is generally overconfident or underconfident per league/side |
+| Reliability by probability bin | Shows whether predicted probability bands match actual hit rates |
+| Zone classification | Classifies each league/side/threshold as Pass, Watchlist, or Reject |
+
+Classification defaults:
+
+| Classification | Rule |
+|---|---|
+| Pass | `N >= 30`, positive opening edge, positive closing edge, positive opening ROI |
+| Watchlist | Positive opening and closing edge, but too small / weak for Pass |
+| Reject | Negative edge, bad ROI below watch floor, or contradictory signal |
+
+The script is research-only. It does not change model probabilities and does not touch the live app.
+
+### Calibration Bias Summary
+
+| League | Side | N | Mean model prob | Actual hit rate | Calibration diff | Read |
+|---|---|---:|---:|---:|---:|---|
+| Bundesliga | Over | 184 | 59.9% | 58.7% | -1.2pp | broadly calibrated |
+| Bundesliga | Under | 184 | 40.1% | 41.3% | +1.2pp | broadly calibrated |
+| Championship | Over | 331 | 46.0% | 46.5% | +0.5pp | broadly calibrated |
+| Championship | Under | 331 | 54.0% | 53.5% | -0.5pp | broadly calibrated |
+| EPL | Over | 228 | 56.3% | 55.3% | -1.1pp | broadly calibrated |
+| EPL | Under | 228 | 43.7% | 44.7% | +1.1pp | broadly calibrated |
+| League Two | Over | 331 | 49.6% | 44.1% | -5.5pp | overconfident |
+| League Two | Under | 331 | 50.4% | 55.9% | +5.5pp | underconfident / useful |
+| Scotland | Over | 137 | 55.0% | 60.6% | +5.5pp | underconfident, but market edge was negative |
+| Scotland | Under | 137 | 45.0% | 39.4% | -5.5pp | overconfident |
+| Serie A | Over | 228 | 47.6% | 45.6% | -2.0pp | overall okay, but high Over bins are poor |
+| Serie A | Under | 228 | 52.4% | 54.4% | +2.0pp | mildly underconfident / useful |
+
+Key calibration read:
+
+- League Two Over is overconfident overall.
+- League Two Under is underconfident overall.
+- Scotland Over has positive historical hit-rate bias, but failed market-edge validation.
+- Serie A Over is not terrible overall, but high-confidence Over zones are badly overconfident.
+- Serie A Under remains one of the cleanest useful sides.
+- Bundesliga is broadly calibrated, with useful Over zones and interesting smaller-sample Under zones.
+
+### Zone Classification Results
+
+Default classification run:
+
+| Result | Count |
+|---|---:|
+| Pass | 8 |
+| Watchlist | 17 |
+| Reject | 19 |
+
+### Pass Zones
+
+| League | Side | Threshold | N | Hit rate | Calibration diff | Open edge | ROI open | Close edge | Read |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| League Two | Under | <= 0.40 | 56 | 69.6% | +4.7pp | +3.2% | +13.9% | +2.3% | strongest balanced candidate |
+| Bundesliga | Over | >= 0.70 | 32 | 81.2% | +5.7pp | +3.3% | +13.9% | +3.1% | strong but smaller sample |
+| Serie A | Under | <= 0.40 | 57 | 66.7% | +0.7pp | +5.4% | +11.3% | +5.1% | strong candidate |
+| Serie A | Under | <= 0.35 | 32 | 65.6% | -3.1pp | +7.0% | +7.2% | +6.6% | stronger edge, smaller sample |
+| Serie A | Under | <= 0.45 | 96 | 61.5% | -1.0pp | +3.7% | +4.6% | +3.5% | broader useful zone |
+| Bundesliga | Over | >= 0.65 | 67 | 71.6% | +0.4pp | +2.8% | +3.9% | +2.5% | coherent candidate |
+| Bundesliga | Over | >= 0.55 | 140 | 65.7% | +0.2pp | +1.1% | +1.4% | +0.9% | valid but marginal |
+| Bundesliga | Over | >= 0.60 | 107 | 66.4% | -1.6pp | +2.0% | +0.3% | +1.9% | valid but very thin ROI |
+
+Practical interpretation: not all Pass zones are equal. The strongest carry-forward candidates are:
+
+1. League Two Under <= 0.40
+2. Serie A Under <= 0.40
+3. Serie A Under <= 0.35
+4. Bundesliga Over >= 0.65
+5. Bundesliga Over >= 0.70
+
+Bundesliga Over >= 0.55 and >= 0.60 technically pass but are marginal because realised ROI is very thin.
+
+### Watchlist Zones Of Interest
+
+| League | Side | Threshold | N | Hit rate | Open edge | ROI open | Close edge | Read |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| Bundesliga | Under | <= 0.45 | 29 | 75.9% | +9.8% | +46.2% | +10.3% | excellent signal, just below N threshold |
+| League Two | Under | <= 0.35 | 26 | 73.1% | +5.7% | +16.8% | +4.5% | coherent, slightly small |
+| EPL | Under | <= 0.45 | 25 | 60.0% | +6.0% | +12.6% | +5.3% | interesting but small |
+| Championship | Under | <= 0.40 | 77 | 61.0% | +1.4% | -0.9% | +1.4% | market edge exists but realised ROI weak |
+| Championship | Under | <= 0.45 | 165 | 57.0% | +0.2% | -4.6% | +0.2% | very weak; likely not actionable yet |
+
+Best watchlist candidates:
+
+1. Bundesliga Under <= 0.45
+2. League Two Under <= 0.35
+3. EPL Under <= 0.45
+
+### Rejected / Dangerous Zones
+
+| League | Side | Threshold | Reason |
+|---|---|---:|---|
+| EPL | Over | >= 0.55 / 0.60 / 0.65 | negative open and close edge; market already priced it too short |
+| League Two | Over | >= 0.55 / 0.60 | positive theoretical edge but poor realised ROI |
+| Serie A | Over | >= 0.55 / 0.60 / 0.65 | high Over zones are badly overconfident |
+| Scotland | Over | >= 0.55 / 0.60 / 0.65 / 0.70 | profitable historically, but negative open and close edge |
+| League Two | Under | <= 0.45 | positive ROI but negative close edge |
+| EPL | Under | <= 0.35 | tiny sample and poor ROI |
+
+Important rejected pattern:
+
+League Two and Serie A Overs are the clearest danger zones. The model reports theoretical edge, but realised results are poor. This suggests the raw Poisson model is directionally unreliable for those Over zones. The safest correction for now is not probability adjustment; it is exclusion.
+
+### Updated Interpretation
+
+The modelling evidence now supports a three-stage research funnel:
+
+1. Discovery scan finds promising league/side/threshold zones.
+2. Historical odds validation checks whether the market already priced those zones correctly.
+3. Calibration classification separates usable zones from false positives.
+
+The current evidence does not support a global O/U model. The useful pattern remains:
+
+`league + side + probability zone + odds validation`
+
+Current carry-forward candidates:
+
+| Tier | Zones |
+|---|---|
+| Strong candidates | League Two Under <= 0.40; Serie A Under <= 0.40; Bundesliga Over >= 0.65 |
+| Aggressive / smaller-sample candidates | Serie A Under <= 0.35; Bundesliga Over >= 0.70; Bundesliga Under <= 0.45 |
+| Watchlist | League Two Under <= 0.35; EPL Under <= 0.45 |
+| Reject / avoid | EPL Overs; League Two Overs; Serie A Overs; Scotland Overs |
+
+Next modelling priorities:
+
+1. Extend odds validation and calibration classification to all 16 Format A leagues.
+2. Add a stricter candidate-ranking score that penalises small samples and thin ROI.
+3. Add season-split stability checks before any probability correction.
+4. Build Format B parsers for Argentina, Sweden, Denmark, and Brazil.
+5. Find alternate data sources for A-League and possibly Saudi Pro League.
+6. Only after more validation, consider live paper-tracking integration.
