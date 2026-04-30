@@ -239,3 +239,187 @@ Per bucket: count, hit rate, avg predicted probability, implied fair odds
 
 This analysis comes before wiring in historical bookmaker odds and before
 any UI work.
+
+---
+
+## Milestone 5 — Threshold Analysis
+
+Added `analyse_thresholds.py` to evaluate holdout predictions by probability zones instead of only whole-league accuracy.
+
+Threshold zones:
+
+| Side | Rule |
+|---|---|
+| Over | `p_over_2_5 >= 0.55`, `0.60`, `0.65`, `0.70` |
+| Under | `p_over_2_5 <= 0.45`, `0.40`, `0.35`, `0.30` |
+
+Finding: whole-league accuracy is not enough. The useful signal is league-specific, side-specific, and threshold-specific.
+
+---
+
+## Milestone 6 — Multi-League Discovery Scan
+
+Added `run_league_scan.py`.
+
+It trains a Poisson model per supported football-data.co.uk Format A league, runs a chronological holdout scan, and writes:
+
+- `outputs/league_scan_summary.csv`
+- `outputs/{slug}_poisson.json` for odds validation
+
+Supported Format A leagues now include EPL, Championship, League One, League Two, Bundesliga, Bundesliga 2, Serie A, Serie B, La Liga, La Liga 2, Ligue 1, Ligue 2, Eredivisie, Belgium, Portugal, and Scotland.
+
+### Strongest Discovery Zones Before Odds Validation
+
+| League | Side | Threshold | N | Hit rate | Avg model prob | Fair odds |
+|---|---|---:|---:|---:|---:|---:|
+| Scotland | Over | >= 0.55 | 66 | 72.7% | 63.1% | 1.586 |
+| Bundesliga | Over | >= 0.65 | 67 | 71.6% | 71.2% | 1.404 |
+| League Two | Under | <= 0.40 | 56 | 69.6% | 64.9% | 1.540 |
+| Serie A | Under | <= 0.40 | 56 | 67.9% | 66.1% | 1.513 |
+| EPL | Over | >= 0.55 | 139 | 61.9% | 61.8% | 1.617 |
+| Championship | Under | <= 0.40 | 77 | 61.0% | 63.1% | 1.584 |
+
+Important: this was discovery only. Hit rate without bookmaker odds is not evidence of betting edge.
+
+---
+
+## Milestone 7 — Historical Odds Validation
+
+Added `evaluate_odds.py`.
+
+Purpose: validate discovery zones against football-data.co.uk historical Over/Under 2.5 odds.
+
+Important caveat: this uses football-data.co.uk aggregated opening and closing odds, not exact GoalScout tip-time odds.
+
+| Odds type | Role |
+|---|---|
+| Opening average odds | Approximate historical entry price |
+| Closing average odds | Market-efficiency and CLV proxy |
+
+Primary columns:
+
+| Use | Over column | Under column |
+|---|---|---|
+| Opening average | `Avg>2.5` | `Avg<2.5` |
+| Closing average | `AvgC>2.5` | `AvgC<2.5` |
+
+Metrics now calculated per league, side, and threshold:
+
+- hit rate
+- average model probability
+- average opening odds
+- opening edge
+- expected value at opening odds
+- realised ROI at opening odds
+- average closing odds
+- closing edge
+
+### Odds-Backed Validation Results For Priority Leagues
+
+| League | Side | Threshold | N | Hit rate | Open edge | EV open | ROI open | Close edge | Read |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| League Two | Under | <= 0.40 | 56 | 69.6% | +3.2% | +5.5% | +13.9% | +2.3% | Strongest balanced candidate |
+| Serie A | Under | <= 0.40 | 57 | 66.7% | +5.4% | +9.5% | +11.3% | +5.1% | Strong candidate |
+| Bundesliga | Under | <= 0.45 | 29 | 75.9% | +9.8% | +19.4% | +46.2% | +10.3% | Very interesting, but smaller sample |
+| Bundesliga | Over | >= 0.65 | 67 | 71.6% | +2.8% | +4.8% | +3.9% | +2.5% | Coherent but less explosive |
+| EPL | Under | <= 0.45 | 25 | 60.0% | +6.0% | +11.9% | +12.6% | +5.3% | Interesting, small sample |
+| Scotland | Over | >= 0.55 | 66 | 72.7% | -0.8% | -0.5% | +15.5% | -0.7% | Profitable historically, but not model-edge backed |
+
+### Zones Weakened Or Rejected By Odds Validation
+
+| League | Side | Threshold | N | Hit rate | Open edge | ROI open | Read |
+|---|---|---:|---:|---:|---:|---:|---|
+| EPL | Over | >= 0.55 | 139 | 61.9% | -3.6% | -4.7% | Hit rate looked good, but market odds were too short |
+| League Two | Over | >= 0.55 | 95 | 47.4% | +7.7% | -11.7% | Model badly overvalued Overs |
+| Serie A | Over | >= 0.55 | 58 | 41.4% | +4.7% | -26.7% | Model badly overvalued Overs |
+
+### Current Interpretation
+
+The odds-backed results support the project pivot.
+
+The useful pattern is not a global Over/Under threshold. It is closer to:
+
+`league + side + probability zone + odds validation`
+
+Current best candidate zones:
+
+1. League Two Under <= 0.40
+2. Serie A Under <= 0.40
+3. Bundesliga Under <= 0.45
+4. Bundesliga Over >= 0.65
+5. EPL Under <= 0.45
+
+League Two Overs and Serie A Overs are red flags. The model showed positive theoretical edge but realised results were poor. This suggests the raw Poisson model needs league-specific and side-specific calibration before being used as a live betting signal.
+
+---
+
+## Milestone 8 — Existing GoalScout History Edge Analysis
+
+Added `analyse_goalscout_history.py`.
+
+Purpose: analyse existing live GoalScout `data/history/predictions.jsonl` with deduplication and market-odds edge bands.
+
+Deduplication key: `fixtureId + market + selection + modelVersion`
+
+Historical live prediction summary:
+
+| Metric | Value |
+|---|---:|
+| Raw rows | 243 |
+| Deduped rows | 168 |
+| Duplicates removed | 75 |
+| Settled rows | 153 |
+| Pending / void | 15 |
+
+Model version breakdown:
+
+| Model version | Deduped | Settled |
+|---|---:|---:|
+| baseline-v1 | 164 | 149 |
+| baseline-v1.1 | 1 | 1 |
+| context_raw_v1.2 | 3 | 3 |
+
+So the live history signal is almost entirely baseline-v1, not calibrated/Poisson.
+
+### Live GoalScout Edge-Band Result
+
+| Edge band | N | Hit rate | Avg odds | ROI |
+|---|---:|---:|---:|---:|
+| Negative | 21 | 66.7% | 1.506 | -0.2% |
+| 0-5% | 8 | 75.0% | 1.511 | +11.8% |
+| 5-10% | 18 | 66.7% | 1.626 | +10.0% |
+| 10%+ | 64 | 67.2% | 1.811 | +20.5% |
+
+Clean CLV summary:
+
+| Metric | Value |
+|---|---:|
+| Clean CLV records | 67 |
+| Mean CLV | +3.03% |
+| Positive CLV | 43 / 67 |
+| Negative / zero CLV | 24 / 67 |
+
+Interpretation: the old live baseline history showed a promising edge/CLV relationship, but it is small sample and mostly baseline-v1. It should be treated as a separate evidence stream from the Poisson sandbox.
+
+---
+
+## Current Direction
+
+GoalScout should not become a generic O/U dashboard with one global rule.
+
+The current evidence supports a research-first betting product built around:
+
+- league-specific model behaviour
+- side-specific calibration
+- probability threshold zones
+- historical odds validation
+- live odds comparison
+
+Next modelling priorities:
+
+1. Add a league + side calibration layer.
+2. Extend historical odds validation to all 16 Format A leagues.
+3. Build a Format B parser for Argentina, Sweden, Denmark, and Brazil.
+4. Find an alternate data source for A-League and possibly Saudi Pro League.
+5. Add a serious candidate ranking metric that balances sample size, opening EV, realised ROI, and closing edge.
+6. Only then integrate the strongest validated zones back into the live GoalScout app.
